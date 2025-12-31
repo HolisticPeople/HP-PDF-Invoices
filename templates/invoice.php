@@ -98,7 +98,6 @@ $prefix = get_option( 'hp_pdfi_invoice_prefix', '' );
 			margin-bottom: 5px;
 		}
 		.discount-line {
-			color: #d63638;
 			font-weight: bold;
 		}
 		.strikethrough {
