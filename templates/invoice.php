@@ -10,9 +10,33 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 $printer_friendly = $invoice->printer_friendly;
 $show_paid_price = $invoice->show_paid_price;
 $logo_id = get_option( 'hp_pdfi_logo' );
+if ( ! $logo_id ) {
+	$wpo_settings = get_option( 'wpo_wcpdf_settings_general' );
+	$logo_id = isset( $wpo_settings['header_logo'] ) ? $wpo_settings['header_logo'] : '';
+}
 $logo_url = $logo_id ? wp_get_attachment_url( $logo_id ) : '';
-$shop_name = get_option( 'hp_pdfi_shop_name', get_bloginfo( 'name' ) );
+
+$shop_name = get_option( 'hp_pdfi_shop_name' );
+if ( ! $shop_name ) {
+	$shop_name = get_bloginfo( 'name' );
+}
+
 $shop_address = get_option( 'hp_pdfi_shop_address' );
+if ( ! $shop_address ) {
+	$wpo_settings = get_option( 'wpo_wcpdf_settings_general' );
+	if ( isset( $wpo_settings['shop_address_line_1']['default'] ) ) {
+		$shop_address = $wpo_settings['shop_address_line_1']['default'];
+		if ( ! empty( $wpo_settings['shop_address_line_2']['default'] ) ) $shop_address .= "\n" . $wpo_settings['shop_address_line_2']['default'];
+		$city_line = array_filter( array(
+			$wpo_settings['shop_address_city']['default'] ?? '',
+			$wpo_settings['shop_address_state']['default'] ?? '',
+			$wpo_settings['shop_address_postcode']['default'] ?? '',
+		) );
+		if ( ! empty( $city_line ) ) $shop_address .= "\n" . implode( ' ', $city_line );
+		if ( ! empty( $wpo_settings['shop_address_country']['default'] ) ) $shop_address .= "\n" . $wpo_settings['shop_address_country']['default'];
+	}
+}
+
 $prefix = get_option( 'hp_pdfi_invoice_prefix', '' );
 ?>
 <!DOCTYPE html>
