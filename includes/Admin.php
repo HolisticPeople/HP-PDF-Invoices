@@ -23,18 +23,28 @@ class Admin {
 	}
 
 	public function add_meta_boxes() {
-		$screen = class_exists( '\Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController' ) && \wc_get_container()->get( \Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController::class )->custom_orders_table_usage_is_enabled()
-			? \wc_get_page_screen_id( 'shop-order' )
-			: 'shop_order';
-
-		add_meta_box(
-			'hp_pdfi_invoice_box',
-			__( 'HP PDF Invoice', 'hp-pdf-invoices' ),
-			array( $this, 'render_meta_box' ),
-			$screen,
-			'side',
-			'default'
+		$screens = array(
+			'shop_order',
+			'edit-shop_order',
+			'woocommerce_page_wc-orders',
+			'toplevel_page_eao_custom_order_editor_page',
+			'admin_page_eao_custom_order_editor_page'
 		);
+
+		if ( class_exists( '\Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController' ) && \wc_get_container()->get( \Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController::class )->custom_orders_table_usage_is_enabled() ) {
+			$screens[] = \wc_get_page_screen_id( 'shop-order' );
+		}
+
+		foreach ( $screens as $screen ) {
+			add_meta_box(
+				'hp_pdfi_invoice_box',
+				__( 'HP PDF Invoice', 'hp-pdf-invoices' ),
+				array( $this, 'render_meta_box' ),
+				$screen,
+				'side',
+				'default'
+			);
+		}
 	}
 
 	public function render_meta_box( $post_or_order ) {
