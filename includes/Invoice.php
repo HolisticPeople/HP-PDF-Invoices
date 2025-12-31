@@ -162,13 +162,25 @@ class Invoice {
 	public function get_totals() {
 		$totals = array();
 		
-		// Subtotal
+		// 1. Subtotal (Before any discounts)
 		$totals['subtotal'] = array(
 			'label' => __( 'Subtotal', 'hp-pdf-invoices' ),
 			'value' => $this->order->get_subtotal_to_display(),
 		);
 
-		// Shipping
+		// 2. Discounts (If show_paid_price is false)
+		if ( ! $this->show_paid_price ) {
+			$discounts = $this->get_discount_summary();
+			foreach ( $discounts as $index => $discount ) {
+				$totals['discount_' . $index] = array(
+					'label' => $discount['label'],
+					'value' => $discount['value'],
+					'class' => 'discount-line',
+				);
+			}
+		}
+
+		// 3. Shipping
 		if ( (float) $this->order->get_shipping_total() > 0 ) {
 			$totals['shipping'] = array(
 				'label' => __( 'Shipping', 'hp-pdf-invoices' ),
@@ -176,7 +188,7 @@ class Invoice {
 			);
 		}
 
-		// Taxes
+		// 4. Taxes
 		foreach ( $this->order->get_tax_totals() as $code => $tax ) {
 			$totals[ 'tax_' . $code ] = array(
 				'label' => $tax->label,
@@ -184,7 +196,7 @@ class Invoice {
 			);
 		}
 
-		// Total
+		// 5. Total
 		$totals['total'] = array(
 			'label' => __( 'Total', 'hp-pdf-invoices' ),
 			'value' => $this->order->get_formatted_order_total(),

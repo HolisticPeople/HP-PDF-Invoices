@@ -76,15 +76,17 @@ $prefix = get_option( 'hp_pdfi_invoice_prefix', '' );
 			text-align: center;
 		}
 		.totals-table {
-			width: 40%;
+			width: 60%;
 			float: right;
 		}
 		.totals-table th {
 			text-align: right;
+			width: 70%;
 		}
 		.totals-table td {
 			text-align: right;
 			font-weight: bold;
+			width: 30%;
 		}
 		.discount-summary {
 			margin-top: 30px;
@@ -208,7 +210,7 @@ $prefix = get_option( 'hp_pdfi_invoice_prefix', '' );
 
 <table class="totals-table">
 	<?php foreach ( $invoice->get_totals() as $total ) : ?>
-		<tr>
+		<tr class="<?php echo isset( $total['class'] ) ? esc_attr( $total['class'] ) : ''; ?>">
 			<th><?php echo $total['label']; ?></th>
 			<td><?php echo $total['value']; ?></td>
 		</tr>
@@ -216,22 +218,6 @@ $prefix = get_option( 'hp_pdfi_invoice_prefix', '' );
 </table>
 
 <div style="clear: both;"></div>
-
-<?php 
-$discounts = $invoice->get_discount_summary();
-if ( ! empty( $discounts ) ) : ?>
-	<div class="discount-summary">
-		<h3><?php _e( 'Savings & Redemptions', 'hp-pdf-invoices' ); ?></h3>
-		<table>
-			<?php foreach ( $discounts as $discount ) : ?>
-				<tr>
-					<td><?php echo $discount['label']; ?></td>
-					<td class="price-column discount-line"><?php echo $discount['value']; ?></td>
-				</tr>
-			<?php endforeach; ?>
-		</table>
-	</div>
-<?php endif; ?>
 
 <?php if ( $order->get_customer_note() ) : ?>
 	<div class="customer-notes">
