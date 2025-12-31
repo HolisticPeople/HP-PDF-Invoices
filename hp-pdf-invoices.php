@@ -2,7 +2,7 @@
 /**
  * Plugin Name: HP PDF Invoices
  * Description: Tailored PDF invoices for Holistic People. Minimal and focused on correct discount display.
- * Version:     1.0.8
+ * Version:     1.0.9
  * Author:      Holistic People
  * Text Domain: hp-pdf-invoices
  * WC requires at least: 3.3
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly
 }
 
-define( 'HP_PDFI_VERSION', '1.0.8' );
+define( 'HP_PDFI_VERSION', '1.0.9' );
 define( 'HP_PDFI_PATH', plugin_dir_path( __FILE__ ) );
 define( 'HP_PDFI_URL', plugin_dir_url( __FILE__ ) );
 
@@ -25,6 +25,7 @@ class HP_PDF_Invoices {
 
 	public $admin;
 	public $assets;
+	public $frontend;
 
 	public static function instance() {
 		if ( is_null( self::$_instance ) ) {
@@ -68,8 +69,9 @@ class HP_PDF_Invoices {
 			require_once HP_PDFI_PATH . 'vendor/strauss/autoload.php';
 		}
 
-		$this->admin  = new HP_PDFI\Admin();
-		$this->assets = new HP_PDFI\Assets();
+		$this->admin    = new HP_PDFI\Admin();
+		$this->assets   = new HP_PDFI\Assets();
+		$this->frontend = new HP_PDFI\Frontend();
 	}
 }
 

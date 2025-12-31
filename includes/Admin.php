@@ -20,6 +20,7 @@ class Admin {
 		
 		// Handle the PDF generation request
 		add_action( 'admin_init', array( $this, 'handle_pdf_request' ) );
+		add_action( 'admin_post_hp_pdfi_generate', array( $this, 'handle_pdf_request' ) );
 	}
 
 	public function add_meta_boxes() {
@@ -183,7 +184,8 @@ class Admin {
 	}
 
 	public function handle_pdf_request() {
-		if ( ! isset( $_GET['hp_pdfi_action'] ) || 'generate' !== $_GET['hp_pdfi_action'] ) {
+		$action = isset( $_GET['hp_pdfi_action'] ) ? $_GET['hp_pdfi_action'] : ( isset( $_GET['action'] ) ? $_GET['action'] : '' );
+		if ( 'generate' !== $action && 'hp_pdfi_generate' !== $action ) {
 			return;
 		}
 
@@ -191,15 +193,20 @@ class Admin {
 			return;
 		}
 
-		if ( ! current_user_can( 'manage_woocommerce_orders' ) && ! current_user_can( 'edit_shop_orders' ) ) {
-			wp_die( __( 'You do not have permission to generate invoices.', 'hp-pdf-invoices' ) );
-		}
-
 		$order_id = absint( $_GET['order_id'] );
 		$order = \wc_get_order( $order_id );
 
 		if ( ! $order ) {
 			wp_die( __( 'Invalid order.', 'hp-pdf-invoices' ) );
+		}
+
+		// Permission check: admin OR order owner
+		$user_id = get_current_user_id();
+		$can_edit = current_user_can( 'manage_woocommerce_orders' ) || current_user_can( 'edit_shop_orders' );
+		$is_owner = $user_id && (int)$user_id === (int)$order->get_customer_id();
+
+		if ( ! $can_edit && ! $is_owner ) {
+			wp_die( __( 'You do not have permission to view this invoice.', 'hp-pdf-invoices' ) );
 		}
 
 		$invoice = new Invoice( $order );
