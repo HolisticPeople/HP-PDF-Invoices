@@ -8,6 +8,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly
 }
 
+if ( ! class_exists( 'HP_PDFI\PDFMaker' ) ) :
+
 class PDFMaker {
 
 	public $html;
@@ -55,4 +57,6 @@ class PDFMaker {
 		return $dompdf->output();
 	}
 }
+
+endif;
 

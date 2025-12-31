@@ -5,6 +5,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly
 }
 
+if ( ! class_exists( 'HP_PDFI\Admin' ) ) :
+
 class Admin {
 
 	public function __construct() {
@@ -179,4 +181,6 @@ class Admin {
 		exit;
 	}
 }
+
+endif;
 

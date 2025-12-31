@@ -5,6 +5,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly
 }
 
+if ( ! class_exists( 'HP_PDFI\Invoice' ) ) :
+
 class Invoice {
 
 	/**
@@ -176,4 +178,6 @@ class Invoice {
 		return $totals;
 	}
 }
+
+endif;
 

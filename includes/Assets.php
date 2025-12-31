@@ -5,6 +5,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly
 }
 
+if ( ! class_exists( 'HP_PDFI\Assets' ) ) :
+
 class Assets {
 
 	public function __construct() {
@@ -21,4 +23,6 @@ class Assets {
 		wp_enqueue_style( 'hp-pdfi-admin' );
 	}
 }
+
+endif;
 
