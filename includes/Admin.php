@@ -66,33 +66,48 @@ class Admin {
 		<div class="hp-pdfi-meta-box">
 			<p>
 				<label>
-					<input type="checkbox" name="hp_pdfi_show_paid_price" value="yes" <?php checked( $show_paid_price, 'yes' ); ?>>
+					<input type="checkbox" class="hp-pdfi-option" name="hp_pdfi_show_paid_price" id="hp_pdfi_show_paid_price" value="yes" <?php checked( $show_paid_price, 'yes' ); ?>>
 					<?php _e( 'Show only paid price', 'hp-pdf-invoices' ); ?>
 				</label>
 			</p>
 			<p>
 				<label>
-					<input type="checkbox" name="hp_pdfi_printer_friendly" value="yes" <?php checked( $printer_friendly, 'yes' ); ?>>
+					<input type="checkbox" class="hp-pdfi-option" name="hp_pdfi_printer_friendly" id="hp_pdfi_printer_friendly" value="yes" <?php checked( $printer_friendly, 'yes' ); ?>>
 					<?php _e( 'Printer friendly', 'hp-pdf-invoices' ); ?>
 				</label>
 			</p>
 			<p>
 				<label>
-					<input type="checkbox" name="hp_pdfi_show_images" value="yes" <?php checked( $show_images, 'yes' ); ?>>
+					<input type="checkbox" class="hp-pdfi-option" name="hp_pdfi_show_images" id="hp_pdfi_show_images" value="yes" <?php checked( $show_images, 'yes' ); ?>>
 					<?php _e( 'Show images', 'hp-pdf-invoices' ); ?>
 				</label>
 			</p>
 			<hr>
 			<p>
-				<a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin.php?hp_pdfi_action=generate&order_id=' . $order_id ), 'generate_invoice' ) ); ?>" class="button button-primary" target="_blank">
+				<a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin.php?hp_pdfi_action=generate&order_id=' . $order_id ), 'generate_invoice' ) ); ?>" id="hp-pdfi-generate-btn" class="button button-primary" target="_blank">
 					<?php _e( 'Generate PDF Invoice', 'hp-pdf-invoices' ); ?>
 				</a>
 			</p>
 		</div>
+		<script>
+		(function($) {
+			function updateLink() {
+				var $btn = $('#hp-pdfi-generate-btn');
+				var url = new URL($btn.attr('href'));
+				url.searchParams.set('hp_pdfi_show_paid_price', $('#hp_pdfi_show_paid_price').is(':checked') ? 'yes' : 'no');
+				url.searchParams.set('hp_pdfi_printer_friendly', $('#hp_pdfi_printer_friendly').is(':checked') ? 'yes' : 'no');
+				url.searchParams.set('hp_pdfi_show_images', $('#hp_pdfi_show_images').is(':checked') ? 'yes' : 'no');
+				$btn.attr('href', url.toString());
+			}
+			$('.hp-pdfi-option').on('change', updateLink);
+			updateLink();
+		})(jQuery);
+		</script>
 		<?php
 	}
 
 	public function save_meta_box_data( $order_id ) {
+		// Nonce check
 		if ( ! isset( $_POST['hp_pdfi_meta_box_nonce'] ) || ! wp_verify_nonce( $_POST['hp_pdfi_meta_box_nonce'], 'hp_pdfi_meta_box' ) ) {
 			return;
 		}
@@ -100,6 +115,7 @@ class Admin {
 		$order = \wc_get_order( $order_id );
 		if ( ! $order ) return;
 
+		// Save meta data
 		$order->update_meta_data( '_hp_pdfi_show_paid_price', isset( $_POST['hp_pdfi_show_paid_price'] ) ? 'yes' : 'no' );
 		$order->update_meta_data( '_hp_pdfi_printer_friendly', isset( $_POST['hp_pdfi_printer_friendly'] ) ? 'yes' : 'no' );
 		$order->update_meta_data( '_hp_pdfi_show_images', isset( $_POST['hp_pdfi_show_images'] ) ? 'yes' : 'no' );

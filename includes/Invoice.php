@@ -21,13 +21,20 @@ class Invoice {
 	public function __construct( $order ) {
 		$this->order = $order;
 
-		// Load options from order meta
+		// Load options from order meta, with overrides from $_GET for immediate preview
 		$this->show_paid_price   = $order->get_meta( '_hp_pdfi_show_paid_price' ) !== 'no';
 		$this->printer_friendly = $order->get_meta( '_hp_pdfi_printer_friendly' ) === 'yes';
 		$this->show_images       = $order->get_meta( '_hp_pdfi_show_images' ) !== 'no';
 
-		// If printer friendly is on but show images is also on, show images overrides printer friendly's "no images"
-		// However, printer friendly still affects headings and logo.
+		if ( isset( $_GET['hp_pdfi_show_paid_price'] ) ) {
+			$this->show_paid_price = $_GET['hp_pdfi_show_paid_price'] === 'yes';
+		}
+		if ( isset( $_GET['hp_pdfi_printer_friendly'] ) ) {
+			$this->printer_friendly = $_GET['hp_pdfi_printer_friendly'] === 'yes';
+		}
+		if ( isset( $_GET['hp_pdfi_show_images'] ) ) {
+			$this->show_images = $_GET['hp_pdfi_show_images'] === 'yes';
+		}
 	}
 
 	public function output() {
@@ -102,41 +109,49 @@ class Invoice {
 
 		$summary = array();
 
-		// 2. Points Redeemed
+		// 1. Points Redeemed
 		$points = $this->order->get_meta( '_ywpar_coupon_points' );
 		$points_amount = (float) $this->order->get_meta( '_ywpar_coupon_amount' );
 
-		// 1. Offer & Item Discounts
-		// Sum of item discounts + Offer Savings fee
+		// 2. Offer & Item Discounts
+		// We want to capture:
+		// - Item level discounts (difference between subtotal and total)
+		// - Fees that are negative (like Offer Savings)
+		// - Coupons that are NOT points coupons
+		
 		$item_discounts = 0;
 		foreach ( $this->order->get_items() as $item ) {
 			$item_discounts += ( (float)$item->get_subtotal() - (float)$item->get_total() );
 		}
 
-		// Subtract points amount from item discounts to avoid double counting
-		// because WC applies coupons to items.
-		if ( $points_amount > 0 ) {
-			$item_discounts = max( 0, $item_discounts - $points_amount );
-		}
-
-		$offer_savings = 0;
+		// Also check for "Offer Savings" or any negative fees
+		$negative_fees = 0;
 		foreach ( $this->order->get_fees() as $fee ) {
-			if ( stripos( $fee->get_name(), 'Offer Savings' ) !== false ) {
-				$offer_savings += abs( (float)$fee->get_total() );
+			$fee_total = (float) $fee->get_total();
+			if ( $fee_total < 0 ) {
+				$negative_fees += abs( $fee_total );
 			}
 		}
 
-		$total_discounts = $item_discounts + $offer_savings;
-		if ( $total_discounts > 0 ) {
+		// Calculate "Offer & Item Discounts"
+		// This is (Total Item Discounts + Negative Fees) - Points Amount
+		// because points amount is usually applied as an item discount by WC.
+		$offer_and_other_discounts = ( $item_discounts + $negative_fees ) - $points_amount;
+		
+		// Ensure it's not negative due to rounding
+		$offer_and_other_discounts = max( 0, $offer_and_other_discounts );
+
+		if ( $offer_and_other_discounts > 0.001 ) {
 			$summary[] = array(
 				'label' => __( 'Offer & Item Discounts:', 'hp-pdf-invoices' ),
-				'value' => '-' . \wc_price( $total_discounts, array( 'currency' => $this->order->get_currency() ) ),
+				'value' => '-' . \wc_price( $offer_and_other_discounts, array( 'currency' => $this->order->get_currency() ) ),
 			);
 		}
 
-		if ( $points && $points_amount ) {
+		if ( $points_amount > 0.001 ) {
+			$points_label = $points ? sprintf( __( 'Points Redeemed (%d pts):', 'hp-pdf-invoices' ), $points ) : __( 'Points Redeemed:', 'hp-pdf-invoices' );
 			$summary[] = array(
-				'label' => sprintf( __( 'Points Redeemed (%d pts):', 'hp-pdf-invoices' ), $points ),
+				'label' => $points_label,
 				'value' => '-' . \wc_price( $points_amount, array( 'currency' => $this->order->get_currency() ) ),
 			);
 		}
