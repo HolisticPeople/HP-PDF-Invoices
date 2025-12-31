@@ -1,0 +1,18 @@
+{
+    "name": "hp/pdf-invoices",
+    "description": "Minimal tailored PDF invoices for Holistic People",
+    "require": {
+        "dompdf/dompdf": "^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "HP_PDFI\\": "includes/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "composer/installers": true
+        }
+    }
+}
+
