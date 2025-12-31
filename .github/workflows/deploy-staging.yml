@@ -13,6 +13,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: staging
     env:
       KINSTA_HOST: ${{ secrets.KINSTA_HOST }}
       KINSTA_USER: ${{ secrets.KINSTA_USER }}
@@ -37,21 +38,19 @@ jobs:
       - name: Resolve deploy path
         run: |
           REMOTE_PATH="${KINSTA_PLUGINS_BASE%/}/hp-pdf-invoices"
-          echo "Deploying plugin to: ${REMOTE_PATH}"
-          echo "REMOTE_PATH=$REMOTE_PATH" >> $GITHUB_ENV
+          echo "DEPLOY_PATH=$REMOTE_PATH" >> $GITHUB_ENV
           # Ensure remote dir exists
           ssh -p "${KINSTA_PORT:-22}" "${KINSTA_USER}@${KINSTA_HOST}" "mkdir -p '${REMOTE_PATH}'"
 
       - name: Rsync to Kinsta staging
         run: |
           rsync -avz --delete \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='.cursor' \
+            --exclude='.git*' \
+            --exclude='.github*' \
+            --exclude='.cursor*' \
             -e "ssh -p ${KINSTA_PORT:-22}" \
-            ./ "${KINSTA_USER}@${KINSTA_HOST}:${REMOTE_PATH}/"
+            ./ "${KINSTA_USER}@${KINSTA_HOST}:${DEPLOY_PATH}/"
 
       - name: Flush cache on staging
         run: |
-          ssh -p "${KINSTA_PORT:-22}" "${KINSTA_USER}@${KINSTA_HOST}" "cd public && wp cache flush"
-
+          ssh -p "${KINSTA_PORT:-22}" "${KINSTA_USER}@${KINSTA_HOST}" "cd $(dirname $(dirname ${DEPLOY_PATH})) && wp cache flush"

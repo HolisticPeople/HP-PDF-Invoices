@@ -10,6 +10,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: production
     env:
       KINSTAPROD_HOST: ${{ secrets.KINSTAPROD_HOST }}
       KINSTAPROD_USER: ${{ secrets.KINSTAPROD_USER }}
@@ -47,4 +48,4 @@ jobs:
 
       - name: Flush Cache
         run: |
-          ssh -p "${KINSTAPROD_PORT}" "${KINSTAPROD_USER}@${KINSTAPROD_HOST}" "cd ${DEPLOY_PATH%/*/*} && wp cache flush"
+          ssh -p "${KINSTAPROD_PORT}" "${KINSTAPROD_USER}@${KINSTAPROD_HOST}" "cd $(dirname $(dirname ${DEPLOY_PATH})) && wp cache flush"
