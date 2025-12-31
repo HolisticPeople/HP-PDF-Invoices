@@ -1,0 +1,51 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      KINSTA_HOST: ${{ secrets.PROD_KINSTA_HOST }}
+      KINSTA_USER: ${{ secrets.PROD_KINSTA_USER }}
+      KINSTA_PORT: ${{ secrets.PROD_KINSTA_PORT }}
+      KINSTA_SSH_KEY: ${{ secrets.PROD_KINSTA_SSH_KEY }}
+      KINSTA_PLUGINS_BASE: ${{ secrets.PROD_KINSTA_PLUGINS_BASE }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Add SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ env.KINSTA_SSH_KEY }}
+
+      - name: Add known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "${KINSTA_PORT:-22}" "${KINSTA_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Resolve deploy path
+        run: |
+          REMOTE_PATH="${KINSTA_PLUGINS_BASE%/}/hp-pdf-invoices"
+          echo "DEPLOY_PATH=$REMOTE_PATH" >> $GITHUB_ENV
+
+      - name: Deploy to Production
+        run: |
+          rsync -avz --delete \
+            --exclude='.git*' \
+            --exclude='.cursor*' \
+            --exclude='.github*' \
+            -e "ssh -p ${KINSTA_PORT}" \
+            ./ "${KINSTA_USER}@${KINSTA_HOST}:${DEPLOY_PATH}/"
+
+      - name: Flush Cache
+        run: |
+          ssh -p "${KINSTA_PORT}" "${KINSTA_USER}@${KINSTA_HOST}" "cd ${DEPLOY_PATH%/*/*} && wp cache flush"
+
