@@ -46,7 +46,7 @@ class Admin {
 		foreach ( $screens as $screen ) {
 			add_meta_box(
 				'hp_pdfi_invoice_box',
-				__( 'Export Invoice', 'hp-pdf-invoices' ),
+				__( 'Export Invoice', 'hp-pdf-invoices' ) . ' <small style="font-weight:normal;color:#666;">v' . HP_PDFI_VERSION . '</small>',
 				array( $this, 'render_meta_box' ),
 				$screen,
 				'side',

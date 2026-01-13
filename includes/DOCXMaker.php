@@ -57,24 +57,46 @@ class DOCXMaker {
 	 * @return string Binary content of the DOCX file
 	 */
 	public function output() {
-		$section = $this->phpWord->addSection();
+		try {
+			$section = $this->phpWord->addSection();
 
-		$this->addHeader( $section );
-		$this->addInvoiceTitle( $section );
-		$this->addAddressesAndOrderInfo( $section );
-		$this->addProductsTable( $section );
-		$this->addTotalsTable( $section );
-		$this->addCustomerNotes( $section );
+			$this->addHeader( $section );
+			$this->addInvoiceTitle( $section );
+			$this->addAddressesAndOrderInfo( $section );
+			$this->addProductsTable( $section );
+			$this->addTotalsTable( $section );
+			$this->addCustomerNotes( $section );
 
-		// Save to temp file and return content
-		$temp_file = wp_tempnam( 'hp_pdfi_docx_' );
-		$writer = IOFactory::createWriter( $this->phpWord, 'Word2007' );
-		$writer->save( $temp_file );
+			// Save to temp file and return content
+			$temp_file = sys_get_temp_dir() . '/hp_pdfi_docx_' . time() . '_' . wp_rand() . '.docx';
+			$writer = IOFactory::createWriter( $this->phpWord, 'Word2007' );
+			$writer->save( $temp_file );
 
-		$content = file_get_contents( $temp_file );
-		@unlink( $temp_file );
+			$content = file_get_contents( $temp_file );
+			@unlink( $temp_file );
 
-		return $content;
+			return $content;
+		} catch ( \Exception $e ) {
+			error_log( 'HP-PDF-Invoices DOCX Error: ' . $e->getMessage() );
+			return false;
+		}
+	}
+
+	/**
+	 * Sanitize text for DOCX output
+	 * Removes HTML entities and special characters that could break the document
+	 *
+	 * @param string $text
+	 * @return string
+	 */
+	protected function sanitizeText( $text ) {
+		// Decode HTML entities
+		$text = html_entity_decode( $text, ENT_QUOTES, 'UTF-8' );
+		// Remove any remaining HTML tags
+		$text = strip_tags( $text );
+		// Remove control characters except newlines and tabs
+		$text = preg_replace( '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $text );
+		return $text;
 	}
 
 	/**
@@ -130,11 +152,11 @@ class DOCXMaker {
 
 		// Shop info cell
 		$cell2 = $table->addCell( 4500 );
-		$cell2->addText( $shop_name, array( 'bold' => true ), array( 'alignment' => Jc::END ) );
+		$cell2->addText( $this->sanitizeText( $shop_name ), array( 'bold' => true ), array( 'alignment' => Jc::END ) );
 		
 		$address_lines = explode( "\n", $shop_address );
 		foreach ( $address_lines as $line ) {
-			$cell2->addText( trim( $line ), array(), array( 'alignment' => Jc::END ) );
+			$cell2->addText( $this->sanitizeText( trim( $line ) ), array(), array( 'alignment' => Jc::END ) );
 		}
 
 		$section->addTextBreak( 1 );
@@ -176,17 +198,17 @@ class DOCXMaker {
 		$cell1->addText( __( 'Billing Address', 'hp-pdf-invoices' ), array( 'bold' => true, 'size' => 11 ) );
 		$billing_lines = explode( '<br/>', $order->get_formatted_billing_address() );
 		foreach ( $billing_lines as $line ) {
-			$cell1->addText( strip_tags( $line ) );
+			$cell1->addText( $this->sanitizeText( $line ) );
 		}
-		$cell1->addText( $order->get_billing_email() );
-		$cell1->addText( $order->get_billing_phone() );
+		$cell1->addText( $this->sanitizeText( $order->get_billing_email() ) );
+		$cell1->addText( $this->sanitizeText( $order->get_billing_phone() ) );
 
 		// Shipping Address
 		$cell2 = $table->addCell( 3000 );
 		$cell2->addText( __( 'Shipping Address', 'hp-pdf-invoices' ), array( 'bold' => true, 'size' => 11 ) );
 		$shipping_lines = explode( '<br/>', $order->get_formatted_shipping_address() );
 		foreach ( $shipping_lines as $line ) {
-			$cell2->addText( strip_tags( $line ) );
+			$cell2->addText( $this->sanitizeText( $line ) );
 		}
 
 		// Order Info
@@ -195,7 +217,7 @@ class DOCXMaker {
 		$cell3->addText( __( 'Invoice Date:', 'hp-pdf-invoices' ) . ' ' . date_i18n( get_option( 'date_format' ) ) );
 		$cell3->addText( __( 'Order Number:', 'hp-pdf-invoices' ) . ' ' . $order->get_order_number() );
 		$cell3->addText( __( 'Order Date:', 'hp-pdf-invoices' ) . ' ' . date_i18n( get_option( 'date_format' ), strtotime( $order->get_date_created() ) ) );
-		$cell3->addText( __( 'Payment Method:', 'hp-pdf-invoices' ) . ' ' . $order->get_payment_method_title() );
+		$cell3->addText( __( 'Payment Method:', 'hp-pdf-invoices' ) . ' ' . $this->sanitizeText( $order->get_payment_method_title() ) );
 
 		$section->addTextBreak( 1 );
 	}
@@ -233,10 +255,10 @@ class DOCXMaker {
 		$items = $this->invoice->get_order_items();
 		foreach ( $items as $item ) {
 			$table->addRow();
-			$table->addCell( 5000 )->addText( strip_tags( $item['name'] ) );
-			$table->addCell( 1500 )->addText( $item['sku'] );
+			$table->addCell( 5000 )->addText( $this->sanitizeText( $item['name'] ) );
+			$table->addCell( 1500 )->addText( $this->sanitizeText( $item['sku'] ) );
 			$table->addCell( 1000 )->addText( $item['quantity'], array(), array( 'alignment' => Jc::CENTER ) );
-			$table->addCell( 1500 )->addText( strip_tags( $item['price'] ), array(), array( 'alignment' => Jc::END ) );
+			$table->addCell( 1500 )->addText( $this->sanitizeText( $item['price'] ), array(), array( 'alignment' => Jc::END ) );
 		}
 
 		$section->addTextBreak( 1 );
@@ -270,8 +292,8 @@ class DOCXMaker {
 			$labelStyle = $isDiscount ? array( 'italic' => true ) : array();
 			$valueStyle = $isTotal ? array( 'bold' => true, 'size' => 12 ) : ( $isDiscount ? array( 'italic' => true, 'color' => $printer_friendly ? '000000' : '666666' ) : array( 'bold' => true ) );
 			
-			$table->addCell( 2500 )->addText( strip_tags( $total['label'] ), $labelStyle, array( 'alignment' => Jc::END ) );
-			$table->addCell( 1500 )->addText( strip_tags( $total['value'] ), $valueStyle, array( 'alignment' => Jc::END ) );
+			$table->addCell( 2500 )->addText( $this->sanitizeText( $total['label'] ), $labelStyle, array( 'alignment' => Jc::END ) );
+			$table->addCell( 1500 )->addText( $this->sanitizeText( $total['value'] ), $valueStyle, array( 'alignment' => Jc::END ) );
 		}
 
 		$section->addTextBreak( 1 );
@@ -292,7 +314,7 @@ class DOCXMaker {
 			__( 'Customer Notes', 'hp-pdf-invoices' ),
 			array( 'bold' => true, 'size' => 11 )
 		);
-		$section->addText( $notes );
+		$section->addText( $this->sanitizeText( $notes ) );
 	}
 
 	/**
