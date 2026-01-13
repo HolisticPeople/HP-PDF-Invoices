@@ -6,6 +6,18 @@ $vendorDir = dirname(__DIR__);
 $baseDir = dirname($vendorDir);
 
 return array(
-    'Symfony\\Polyfill\\Mbstring\\' => array($vendorDir . '/symfony/polyfill-mbstring'),
-    'Symfony\\Polyfill\\Iconv\\' => array($vendorDir . '/symfony/polyfill-iconv'),
+    'ZipStream\\' => array($vendorDir . '/maennchen/zipstream-php/src'),
+    'Svg\\' => array($vendorDir . '/phenx/php-svg-lib/src/Svg'),
+    'Sabberworm\\CSS\\' => array($vendorDir . '/sabberworm/php-css-parser/src'),
+    'Psr\\SimpleCache\\' => array($vendorDir . '/psr/simple-cache/src'),
+    'PhpOffice\\PhpWord\\' => array($vendorDir . '/phpoffice/phpword/src/PhpWord'),
+    'PhpOffice\\PhpSpreadsheet\\' => array($vendorDir . '/phpoffice/phpspreadsheet/src/PhpSpreadsheet'),
+    'PhpOffice\\Math\\' => array($vendorDir . '/phpoffice/math/src/Math'),
+    'Matrix\\' => array($vendorDir . '/markbaker/matrix/classes/src'),
+    'Masterminds\\' => array($vendorDir . '/masterminds/html5/src'),
+    'HP_PDFI\\' => array($baseDir . '/includes'),
+    'FontLib\\' => array($vendorDir . '/phenx/php-font-lib/src/FontLib'),
+    'Dompdf\\' => array($vendorDir . '/dompdf/dompdf/src'),
+    'Composer\\Pcre\\' => array($vendorDir . '/composer/pcre/src'),
+    'Complex\\' => array($vendorDir . '/markbaker/complex/classes/src'),
 );

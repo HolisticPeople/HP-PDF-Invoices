@@ -1,4 +1,11 @@
 <?php
+/**
+ * Admin Class - Handles admin UI and document generation
+ * 
+ * @package HP_PDF_Invoices
+ * @version 1.2.0
+ * @author Amnon Manneberg
+ */
 namespace HP_PDFI;
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -18,9 +25,9 @@ class Admin {
 		// Add order action for the invoice
 		add_filter( 'woocommerce_admin_order_actions', array( $this, 'add_order_listing_actions' ), 10, 2 );
 		
-		// Handle the PDF generation request
-		add_action( 'admin_init', array( $this, 'handle_pdf_request' ) );
-		add_action( 'admin_post_hp_pdfi_generate', array( $this, 'handle_pdf_request' ) );
+		// Handle the document generation request (PDF, DOCX, XLSX)
+		add_action( 'admin_init', array( $this, 'handle_document_request' ) );
+		add_action( 'admin_post_hp_pdfi_generate', array( $this, 'handle_document_request' ) );
 	}
 
 	public function add_meta_boxes() {
@@ -62,6 +69,12 @@ class Admin {
 		if ( '' === $printer_friendly ) $printer_friendly = 'no';
 		if ( '' === $show_images ) $show_images = 'yes';
 
+		// Base URLs for each format
+		$base_url = admin_url( 'admin.php?hp_pdfi_action=generate&order_id=' . $order_id );
+		$pdf_url  = wp_nonce_url( $base_url . '&format=pdf', 'generate_invoice' );
+		$docx_url = wp_nonce_url( $base_url . '&format=docx', 'generate_invoice' );
+		$xlsx_url = wp_nonce_url( $base_url . '&format=xlsx', 'generate_invoice' );
+
 		wp_nonce_field( 'hp_pdfi_meta_box', 'hp_pdfi_meta_box_nonce' );
 		?>
 		<div class="hp-pdfi-meta-box">
@@ -84,26 +97,50 @@ class Admin {
 				</label>
 			</p>
 			<hr>
-			<p>
-				<a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin.php?hp_pdfi_action=generate&order_id=' . $order_id ), 'generate_invoice' ) ); ?>" id="hp-pdfi-generate-btn" class="button button-primary" target="_blank">
-					<?php _e( 'Generate PDF Invoice', 'hp-pdf-invoices' ); ?>
+			<p style="margin-bottom: 8px;">
+				<strong><?php _e( 'Export Invoice:', 'hp-pdf-invoices' ); ?></strong>
+			</p>
+			<p class="hp-pdfi-export-buttons" style="display: flex; gap: 5px; flex-wrap: wrap;">
+				<a href="<?php echo esc_url( $pdf_url ); ?>" id="hp-pdfi-pdf-btn" class="button button-primary" target="_blank" title="<?php esc_attr_e( 'Download PDF', 'hp-pdf-invoices' ); ?>">
+					<span class="dashicons dashicons-pdf" style="margin-top: 3px;"></span> PDF
+				</a>
+				<a href="<?php echo esc_url( $docx_url ); ?>" id="hp-pdfi-docx-btn" class="button" target="_blank" title="<?php esc_attr_e( 'Download Word Document', 'hp-pdf-invoices' ); ?>">
+					<span class="dashicons dashicons-media-document" style="margin-top: 3px;"></span> DOCX
+				</a>
+				<a href="<?php echo esc_url( $xlsx_url ); ?>" id="hp-pdfi-xlsx-btn" class="button" target="_blank" title="<?php esc_attr_e( 'Download Excel Spreadsheet', 'hp-pdf-invoices' ); ?>">
+					<span class="dashicons dashicons-media-spreadsheet" style="margin-top: 3px;"></span> Excel
 				</a>
 			</p>
 		</div>
 		<script>
 		(function($) {
-			function updateLink() {
-				var $btn = $('#hp-pdfi-generate-btn');
-				var url = new URL($btn.attr('href'));
-				url.searchParams.set('hp_pdfi_show_paid_price', $('#hp_pdfi_show_paid_price').is(':checked') ? 'yes' : 'no');
-				url.searchParams.set('hp_pdfi_printer_friendly', $('#hp_pdfi_printer_friendly').is(':checked') ? 'yes' : 'no');
-				url.searchParams.set('hp_pdfi_show_images', $('#hp_pdfi_show_images').is(':checked') ? 'yes' : 'no');
-				$btn.attr('href', url.toString());
+			function updateLinks() {
+				var params = {
+					'hp_pdfi_show_paid_price': $('#hp_pdfi_show_paid_price').is(':checked') ? 'yes' : 'no',
+					'hp_pdfi_printer_friendly': $('#hp_pdfi_printer_friendly').is(':checked') ? 'yes' : 'no',
+					'hp_pdfi_show_images': $('#hp_pdfi_show_images').is(':checked') ? 'yes' : 'no'
+				};
+
+				$('#hp-pdfi-pdf-btn, #hp-pdfi-docx-btn, #hp-pdfi-xlsx-btn').each(function() {
+					var $btn = $(this);
+					var url = new URL($btn.attr('href'));
+					$.each(params, function(key, value) {
+						url.searchParams.set(key, value);
+					});
+					$btn.attr('href', url.toString());
+				});
 			}
-			$('.hp-pdfi-option').on('change', updateLink);
-			updateLink();
+			$('.hp-pdfi-option').on('change', updateLinks);
+			updateLinks();
 		})(jQuery);
 		</script>
+		<style>
+		.hp-pdfi-export-buttons .button .dashicons {
+			font-size: 16px;
+			width: 16px;
+			height: 16px;
+		}
+		</style>
 		<?php
 	}
 
@@ -183,13 +220,16 @@ class Admin {
 		return $actions;
 	}
 
-	public function handle_pdf_request() {
-		$action = isset( $_GET['hp_pdfi_action'] ) ? $_GET['hp_pdfi_action'] : ( isset( $_GET['action'] ) ? $_GET['action'] : '' );
+	/**
+	 * Handle document generation request (PDF, DOCX, XLSX)
+	 */
+	public function handle_document_request() {
+		$action = isset( $_GET['hp_pdfi_action'] ) ? sanitize_text_field( $_GET['hp_pdfi_action'] ) : ( isset( $_GET['action'] ) ? sanitize_text_field( $_GET['action'] ) : '' );
 		if ( 'generate' !== $action && 'hp_pdfi_generate' !== $action ) {
 			return;
 		}
 
-		if ( ! isset( $_GET['order_id'] ) || ! isset( $_GET['_wpnonce'] ) || ! wp_verify_nonce( $_GET['_wpnonce'], 'generate_invoice' ) ) {
+		if ( ! isset( $_GET['order_id'] ) || ! isset( $_GET['_wpnonce'] ) || ! wp_verify_nonce( sanitize_text_field( $_GET['_wpnonce'] ), 'generate_invoice' ) ) {
 			return;
 		}
 
@@ -203,15 +243,44 @@ class Admin {
 		// Permission check: admin OR order owner
 		$user_id = get_current_user_id();
 		$can_edit = current_user_can( 'manage_woocommerce_orders' ) || current_user_can( 'edit_shop_orders' );
-		$is_owner = $user_id && (int)$user_id === (int)$order->get_customer_id();
+		$is_owner = $user_id && (int) $user_id === (int) $order->get_customer_id();
 
 		if ( ! $can_edit && ! $is_owner ) {
 			wp_die( __( 'You do not have permission to view this invoice.', 'hp-pdf-invoices' ) );
 		}
 
+		// Determine format (default to PDF)
+		$format = isset( $_GET['format'] ) ? sanitize_text_field( $_GET['format'] ) : 'pdf';
+		$allowed_formats = array( 'pdf', 'docx', 'xlsx' );
+		
+		if ( ! in_array( $format, $allowed_formats, true ) ) {
+			$format = 'pdf';
+		}
+
 		$invoice = new Invoice( $order );
-		$invoice->output();
+
+		switch ( $format ) {
+			case 'docx':
+				$invoice->output_docx();
+				break;
+			case 'xlsx':
+				$invoice->output_xlsx();
+				break;
+			case 'pdf':
+			default:
+				$invoice->output_pdf();
+				break;
+		}
+
 		exit;
+	}
+
+	/**
+	 * Legacy method name for backwards compatibility
+	 * @deprecated Use handle_document_request() instead
+	 */
+	public function handle_pdf_request() {
+		$this->handle_document_request();
 	}
 }
 

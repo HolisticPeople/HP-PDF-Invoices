@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: HP PDF Invoices
- * Description: Tailored PDF invoices for Holistic People. Minimal and focused on correct discount display.
- * Version:     1.1.1
+ * Description: Tailored PDF invoices for Holistic People. Supports PDF, Word (DOCX), and Excel (XLSX) export formats.
+ * Version:     1.2.0
  * Author:      Holistic People
  * Text Domain: hp-pdf-invoices
  * WC requires at least: 3.3
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly
 }
 
-define( 'HP_PDFI_VERSION', '1.1.1' );
+define( 'HP_PDFI_VERSION', '1.2.0' );
 define( 'HP_PDFI_PATH', plugin_dir_path( __FILE__ ) );
 define( 'HP_PDFI_URL', plugin_dir_url( __FILE__ ) );
 

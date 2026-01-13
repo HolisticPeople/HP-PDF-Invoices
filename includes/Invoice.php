@@ -1,4 +1,11 @@
 <?php
+/**
+ * Invoice Document Class
+ * 
+ * @package HP_PDF_Invoices
+ * @version 1.2.0
+ * @author Amnon Manneberg
+ */
 namespace HP_PDFI;
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -37,7 +44,17 @@ class Invoice {
 		}
 	}
 
+	/**
+	 * Output PDF invoice
+	 */
 	public function output() {
+		$this->output_pdf();
+	}
+
+	/**
+	 * Output PDF invoice
+	 */
+	public function output_pdf() {
 		$html = $this->get_html();
 		$pdf_maker = new PDFMaker( $html );
 		$pdf = $pdf_maker->output();
@@ -47,6 +64,40 @@ class Invoice {
 			header( 'Content-Type: application/pdf' );
 			header( 'Content-Disposition: inline; filename="' . $filename . '"' );
 			echo $pdf;
+		}
+	}
+
+	/**
+	 * Output DOCX invoice
+	 */
+	public function output_docx() {
+		$docx_maker = new DOCXMaker( $this );
+		$content = $docx_maker->output();
+
+		if ( $content ) {
+			$filename = 'invoice-' . $this->order->get_order_number() . '.docx';
+			header( 'Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document' );
+			header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+			header( 'Content-Length: ' . strlen( $content ) );
+			header( 'Cache-Control: max-age=0' );
+			echo $content;
+		}
+	}
+
+	/**
+	 * Output Excel invoice
+	 */
+	public function output_xlsx() {
+		$excel_maker = new ExcelMaker( $this );
+		$content = $excel_maker->output();
+
+		if ( $content ) {
+			$filename = 'invoice-' . $this->order->get_order_number() . '.xlsx';
+			header( 'Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' );
+			header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+			header( 'Content-Length: ' . strlen( $content ) );
+			header( 'Cache-Control: max-age=0' );
+			echo $content;
 		}
 	}
 
@@ -200,6 +251,99 @@ class Invoice {
 		$totals['total'] = array(
 			'label' => __( 'Total', 'hp-pdf-invoices' ),
 			'value' => $this->order->get_formatted_order_total(),
+		);
+
+		return $totals;
+	}
+
+	/**
+	 * Get raw order items data for Excel export
+	 * Returns unformatted numeric values suitable for spreadsheet calculations
+	 *
+	 * @return array
+	 */
+	public function get_raw_order_items() {
+		$items = $this->order->get_items();
+		$data = array();
+
+		foreach ( $items as $item_id => $item ) {
+			$product = $item->get_product();
+			$line_total = (float) $item->get_total();
+			$line_subtotal = (float) $item->get_subtotal();
+			$quantity = (int) $item->get_quantity();
+			
+			// Actual paid price per unit
+			$unit_price = $quantity > 0 ? $line_total / $quantity : 0;
+
+			$data[] = array(
+				'id'            => $item_id,
+				'name'          => $item->get_name(),
+				'sku'           => $product ? $product->get_sku() : '',
+				'quantity'      => $quantity,
+				'unit_price'    => round( $unit_price, 2 ),
+				'line_total'    => round( $line_total, 2 ),
+				'line_subtotal' => round( $line_subtotal, 2 ),
+				'has_discount'  => $line_total < $line_subtotal,
+			);
+		}
+
+		return $data;
+	}
+
+	/**
+	 * Get raw totals data for Excel export
+	 * Returns unformatted numeric values suitable for spreadsheet calculations
+	 *
+	 * @return array
+	 */
+	public function get_raw_totals() {
+		$totals = array();
+		
+		// Subtotal
+		$subtotal = 0;
+		foreach ( $this->order->get_items() as $item ) {
+			$subtotal += (float) $item->get_subtotal();
+		}
+		$totals[] = array(
+			'key'       => 'subtotal',
+			'label'     => __( 'Subtotal', 'hp-pdf-invoices' ),
+			'raw_value' => round( $subtotal, 2 ),
+		);
+
+		// Discount
+		$discount = (float) $this->order->get_total_discount();
+		if ( $discount > 0 ) {
+			$totals[] = array(
+				'key'       => 'discount',
+				'label'     => __( 'Discount', 'hp-pdf-invoices' ),
+				'raw_value' => round( -$discount, 2 ),
+			);
+		}
+
+		// Shipping
+		$shipping = (float) $this->order->get_shipping_total();
+		if ( $shipping > 0 ) {
+			$totals[] = array(
+				'key'       => 'shipping',
+				'label'     => __( 'Shipping', 'hp-pdf-invoices' ),
+				'raw_value' => round( $shipping, 2 ),
+			);
+		}
+
+		// Taxes
+		foreach ( $this->order->get_tax_totals() as $code => $tax ) {
+			$totals[] = array(
+				'key'       => 'tax_' . $code,
+				'label'     => $tax->label,
+				'raw_value' => round( (float) $tax->amount, 2 ),
+			);
+		}
+
+		// Total
+		$totals[] = array(
+			'key'       => 'total',
+			'label'     => __( 'Total', 'hp-pdf-invoices' ),
+			'raw_value' => round( (float) $this->order->get_total(), 2 ),
 		);
 
 		return $totals;

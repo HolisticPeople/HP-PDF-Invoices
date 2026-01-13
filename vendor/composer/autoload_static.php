@@ -6,34 +6,109 @@ namespace Composer\Autoload;
 
 class ComposerStaticInithppdfi8da09a8f6b5e759115e893ca39030504
 {
-    public static $files = array (
-        'def43f6c87e4f8dfd0c9e1b1bab14fe8' => __DIR__ . '/..' . '/symfony/polyfill-iconv/bootstrap.php',
-        '0e6d7bf4a5811bfa5cf40c5ccd6fae6a' => __DIR__ . '/..' . '/symfony/polyfill-mbstring/bootstrap.php',
-    );
-
     public static $prefixLengthsPsr4 = array (
-        'S' => 
+        'Z' =>
         array (
-            'Symfony\\Polyfill\\Mbstring\\' => 26,
-            'Symfony\\Polyfill\\Iconv\\' => 23,
+            'ZipStream\\' => 10,
+        ),
+        'S' =>
+        array (
+            'Svg\\' => 4,
+            'Sabberworm\\CSS\\' => 15,
+        ),
+        'P' =>
+        array (
+            'Psr\\SimpleCache\\' => 16,
+            'PhpOffice\\PhpWord\\' => 18,
+            'PhpOffice\\PhpSpreadsheet\\' => 25,
+            'PhpOffice\\Math\\' => 15,
+        ),
+        'M' =>
+        array (
+            'Matrix\\' => 7,
+            'Masterminds\\' => 12,
+        ),
+        'H' =>
+        array (
+            'HP_PDFI\\' => 8,
+        ),
+        'F' =>
+        array (
+            'FontLib\\' => 8,
+        ),
+        'D' =>
+        array (
+            'Dompdf\\' => 7,
+        ),
+        'C' =>
+        array (
+            'Composer\\Pcre\\' => 14,
+            'Complex\\' => 8,
         ),
     );
 
     public static $prefixDirsPsr4 = array (
-        'Symfony\\Polyfill\\Mbstring\\' => 
+        'ZipStream\\' =>
         array (
-            0 => __DIR__ . '/..' . '/symfony/polyfill-mbstring',
+            0 => __DIR__ . '/..' . '/maennchen/zipstream-php/src',
         ),
-        'Symfony\\Polyfill\\Iconv\\' => 
+        'Svg\\' =>
         array (
-            0 => __DIR__ . '/..' . '/symfony/polyfill-iconv',
+            0 => __DIR__ . '/..' . '/phenx/php-svg-lib/src/Svg',
+        ),
+        'Sabberworm\\CSS\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/sabberworm/php-css-parser/src',
+        ),
+        'Psr\\SimpleCache\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/psr/simple-cache/src',
+        ),
+        'PhpOffice\\PhpWord\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/phpoffice/phpword/src/PhpWord',
+        ),
+        'PhpOffice\\PhpSpreadsheet\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/phpoffice/phpspreadsheet/src/PhpSpreadsheet',
+        ),
+        'PhpOffice\\Math\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/phpoffice/math/src/Math',
+        ),
+        'Matrix\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/markbaker/matrix/classes/src',
+        ),
+        'Masterminds\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/masterminds/html5/src',
+        ),
+        'HP_PDFI\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/includes',
+        ),
+        'FontLib\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/phenx/php-font-lib/src/FontLib',
+        ),
+        'Dompdf\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/dompdf/dompdf/src',
+        ),
+        'Composer\\Pcre\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/composer/pcre/src',
+        ),
+        'Complex\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/markbaker/complex/classes/src',
         ),
     );
 
     public static $classMap = array (
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
-        'Symfony\\Polyfill\\Iconv\\Iconv' => __DIR__ . '/..' . '/symfony/polyfill-iconv/Iconv.php',
-        'Symfony\\Polyfill\\Mbstring\\Mbstring' => __DIR__ . '/..' . '/symfony/polyfill-mbstring/Mbstring.php',
+        'Dompdf\\Cpdf' => __DIR__ . '/..' . '/dompdf/dompdf/lib/Cpdf.php',
     );
 
     public static function getInitializer(ClassLoader $loader)
