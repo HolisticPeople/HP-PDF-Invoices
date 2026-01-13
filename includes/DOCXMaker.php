@@ -206,7 +206,6 @@ class DOCXMaker {
 	 * @param \PhpOffice\PhpWord\Element\Section $section
 	 */
 	protected function addProductsTable( $section ) {
-		$show_images = $this->invoice->show_images;
 		$printer_friendly = $this->invoice->printer_friendly;
 
 		$tableStyle = array(
@@ -225,56 +224,19 @@ class DOCXMaker {
 
 		// Header row
 		$table->addRow();
-		if ( $show_images ) {
-			$table->addCell( 1000, $headerStyle )->addText( '', $boldFont ); // Image column
-		}
-		$table->addCell( $show_images ? 4000 : 5000, $headerStyle )->addText( __( 'Product', 'hp-pdf-invoices' ), $boldFont );
+		$table->addCell( 5000, $headerStyle )->addText( __( 'Product', 'hp-pdf-invoices' ), $boldFont );
 		$table->addCell( 1500, $headerStyle )->addText( __( 'SKU', 'hp-pdf-invoices' ), $boldFont );
 		$table->addCell( 1000, $headerStyle )->addText( __( 'Qty', 'hp-pdf-invoices' ), $boldFont, array( 'alignment' => Jc::CENTER ) );
 		$table->addCell( 1500, $headerStyle )->addText( __( 'Price', 'hp-pdf-invoices' ), $boldFont, array( 'alignment' => Jc::END ) );
 
-		// Data rows - get directly from order to access product
-		$order_items = $this->order->get_items();
-		$formatted_items = $this->invoice->get_order_items();
-		
-		$index = 0;
-		foreach ( $order_items as $item_id => $order_item ) {
+		// Data rows - get_order_items() respects show_paid_price for pricing
+		$items = $this->invoice->get_order_items();
+		foreach ( $items as $item ) {
 			$table->addRow();
-			$product = $order_item->get_product();
-			$formatted = isset( $formatted_items[ $index ] ) ? $formatted_items[ $index ] : null;
-			
-			// Add product image if enabled
-			if ( $show_images ) {
-				$cell = $table->addCell( 1000 );
-				if ( $product ) {
-					$image_id = $product->get_image_id();
-					if ( $image_id ) {
-						$image_path = get_attached_file( $image_id );
-						if ( $image_path && file_exists( $image_path ) ) {
-							try {
-								$cell->addImage( $image_path, array(
-									'width'  => 40,
-									'height' => 40,
-								) );
-							} catch ( \Exception $e ) {
-								// Skip image if error
-							}
-						}
-					}
-				}
-			}
-			
-			$name = $formatted ? $formatted['name'] : $order_item->get_name();
-			$sku = $formatted ? $formatted['sku'] : ( $product ? $product->get_sku() : '' );
-			$qty = $formatted ? $formatted['quantity'] : $order_item->get_quantity();
-			$price = $formatted ? $formatted['price'] : \wc_price( $order_item->get_total() / $order_item->get_quantity() );
-			
-			$table->addCell( $show_images ? 4000 : 5000 )->addText( strip_tags( $name ) );
-			$table->addCell( 1500 )->addText( $sku );
-			$table->addCell( 1000 )->addText( $qty, array(), array( 'alignment' => Jc::CENTER ) );
-			$table->addCell( 1500 )->addText( strip_tags( $price ), array(), array( 'alignment' => Jc::END ) );
-			
-			$index++;
+			$table->addCell( 5000 )->addText( strip_tags( $item['name'] ) );
+			$table->addCell( 1500 )->addText( $item['sku'] );
+			$table->addCell( 1000 )->addText( $item['quantity'], array(), array( 'alignment' => Jc::CENTER ) );
+			$table->addCell( 1500 )->addText( strip_tags( $item['price'] ), array(), array( 'alignment' => Jc::END ) );
 		}
 
 		$section->addTextBreak( 1 );
