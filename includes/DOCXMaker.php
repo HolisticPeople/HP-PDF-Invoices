@@ -206,14 +206,17 @@ class DOCXMaker {
 	 * @param \PhpOffice\PhpWord\Element\Section $section
 	 */
 	protected function addProductsTable( $section ) {
+		$show_images = $this->invoice->show_images;
+		$printer_friendly = $this->invoice->printer_friendly;
+
 		$tableStyle = array(
 			'borderSize'  => 6,
-			'borderColor' => 'CCCCCC',
+			'borderColor' => $printer_friendly ? '000000' : 'CCCCCC',
 			'cellMargin'  => 80,
 		);
 
 		$headerStyle = array(
-			'bgColor' => 'EEEEEE',
+			'bgColor' => $printer_friendly ? 'FFFFFF' : 'EEEEEE',
 		);
 
 		$boldFont = array( 'bold' => true );
@@ -222,19 +225,56 @@ class DOCXMaker {
 
 		// Header row
 		$table->addRow();
-		$table->addCell( 5000, $headerStyle )->addText( __( 'Product', 'hp-pdf-invoices' ), $boldFont );
+		if ( $show_images ) {
+			$table->addCell( 1000, $headerStyle )->addText( '', $boldFont ); // Image column
+		}
+		$table->addCell( $show_images ? 4000 : 5000, $headerStyle )->addText( __( 'Product', 'hp-pdf-invoices' ), $boldFont );
 		$table->addCell( 1500, $headerStyle )->addText( __( 'SKU', 'hp-pdf-invoices' ), $boldFont );
 		$table->addCell( 1000, $headerStyle )->addText( __( 'Qty', 'hp-pdf-invoices' ), $boldFont, array( 'alignment' => Jc::CENTER ) );
 		$table->addCell( 1500, $headerStyle )->addText( __( 'Price', 'hp-pdf-invoices' ), $boldFont, array( 'alignment' => Jc::END ) );
 
-		// Data rows
-		$items = $this->invoice->get_order_items();
-		foreach ( $items as $item ) {
+		// Data rows - get directly from order to access product
+		$order_items = $this->order->get_items();
+		$formatted_items = $this->invoice->get_order_items();
+		
+		$index = 0;
+		foreach ( $order_items as $item_id => $order_item ) {
 			$table->addRow();
-			$table->addCell( 5000 )->addText( strip_tags( $item['name'] ) );
-			$table->addCell( 1500 )->addText( $item['sku'] );
-			$table->addCell( 1000 )->addText( $item['quantity'], array(), array( 'alignment' => Jc::CENTER ) );
-			$table->addCell( 1500 )->addText( strip_tags( $item['price'] ), array(), array( 'alignment' => Jc::END ) );
+			$product = $order_item->get_product();
+			$formatted = isset( $formatted_items[ $index ] ) ? $formatted_items[ $index ] : null;
+			
+			// Add product image if enabled
+			if ( $show_images ) {
+				$cell = $table->addCell( 1000 );
+				if ( $product ) {
+					$image_id = $product->get_image_id();
+					if ( $image_id ) {
+						$image_path = get_attached_file( $image_id );
+						if ( $image_path && file_exists( $image_path ) ) {
+							try {
+								$cell->addImage( $image_path, array(
+									'width'  => 40,
+									'height' => 40,
+								) );
+							} catch ( \Exception $e ) {
+								// Skip image if error
+							}
+						}
+					}
+				}
+			}
+			
+			$name = $formatted ? $formatted['name'] : $order_item->get_name();
+			$sku = $formatted ? $formatted['sku'] : ( $product ? $product->get_sku() : '' );
+			$qty = $formatted ? $formatted['quantity'] : $order_item->get_quantity();
+			$price = $formatted ? $formatted['price'] : \wc_price( $order_item->get_total() / $order_item->get_quantity() );
+			
+			$table->addCell( $show_images ? 4000 : 5000 )->addText( strip_tags( $name ) );
+			$table->addCell( 1500 )->addText( $sku );
+			$table->addCell( 1000 )->addText( $qty, array(), array( 'alignment' => Jc::CENTER ) );
+			$table->addCell( 1500 )->addText( strip_tags( $price ), array(), array( 'alignment' => Jc::END ) );
+			
+			$index++;
 		}
 
 		$section->addTextBreak( 1 );
@@ -246,22 +286,30 @@ class DOCXMaker {
 	 * @param \PhpOffice\PhpWord\Element\Section $section
 	 */
 	protected function addTotalsTable( $section ) {
+		$printer_friendly = $this->invoice->printer_friendly;
+		
 		$table = $section->addTable( array(
 			'borderSize'  => 0,
 			'cellMargin'  => 80,
 			'alignment'   => Jc::END,
 		) );
 
+		// get_totals() already respects show_paid_price option
 		$totals = $this->invoice->get_totals();
 
 		foreach ( $totals as $key => $total ) {
 			$table->addRow();
 			$table->addCell( 5000 ); // Empty spacer cell
-			$table->addCell( 2500 )->addText( strip_tags( $total['label'] ), array(), array( 'alignment' => Jc::END ) );
 			
+			// Check if this is a discount line
+			$isDiscount = isset( $total['class'] ) && $total['class'] === 'discount-line';
 			$isTotal = ( $key === 'total' );
-			$fontStyle = $isTotal ? array( 'bold' => true, 'size' => 12 ) : array( 'bold' => true );
-			$table->addCell( 1500 )->addText( strip_tags( $total['value'] ), $fontStyle, array( 'alignment' => Jc::END ) );
+			
+			$labelStyle = $isDiscount ? array( 'italic' => true ) : array();
+			$valueStyle = $isTotal ? array( 'bold' => true, 'size' => 12 ) : ( $isDiscount ? array( 'italic' => true, 'color' => $printer_friendly ? '000000' : '666666' ) : array( 'bold' => true ) );
+			
+			$table->addCell( 2500 )->addText( strip_tags( $total['label'] ), $labelStyle, array( 'alignment' => Jc::END ) );
+			$table->addCell( 1500 )->addText( strip_tags( $total['value'] ), $valueStyle, array( 'alignment' => Jc::END ) );
 		}
 
 		$section->addTextBreak( 1 );
