@@ -52,6 +52,26 @@ class Invoice {
 	}
 
 	/**
+	 * Get sanitized filename base with order number and customer name
+	 *
+	 * @return string
+	 */
+	protected function get_filename_base() {
+		$order_number = $this->order->get_order_number();
+		$customer_name = trim( $this->order->get_billing_first_name() . ' ' . $this->order->get_billing_last_name() );
+		
+		// Sanitize customer name for filename (remove special chars, replace spaces with dashes)
+		$customer_name = sanitize_file_name( $customer_name );
+		$customer_name = preg_replace( '/[^a-zA-Z0-9\-_]/', '', $customer_name );
+		
+		if ( empty( $customer_name ) ) {
+			return 'invoice-' . $order_number;
+		}
+		
+		return 'invoice-' . $order_number . '-' . $customer_name;
+	}
+
+	/**
 	 * Output PDF invoice
 	 */
 	public function output_pdf() {
@@ -60,7 +80,7 @@ class Invoice {
 		$pdf = $pdf_maker->output();
 
 		if ( $pdf ) {
-			$filename = 'invoice-' . $this->order->get_order_number() . '.pdf';
+			$filename = $this->get_filename_base() . '.pdf';
 			header( 'Content-Type: application/pdf' );
 			header( 'Content-Disposition: inline; filename="' . $filename . '"' );
 			echo $pdf;
@@ -75,7 +95,7 @@ class Invoice {
 		$content = $docx_maker->output();
 
 		if ( $content ) {
-			$filename = 'invoice-' . $this->order->get_order_number() . '.docx';
+			$filename = $this->get_filename_base() . '.docx';
 			header( 'Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document' );
 			header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
 			header( 'Content-Length: ' . strlen( $content ) );
@@ -92,7 +112,7 @@ class Invoice {
 		$content = $excel_maker->output();
 
 		if ( $content ) {
-			$filename = 'invoice-' . $this->order->get_order_number() . '.xlsx';
+			$filename = $this->get_filename_base() . '.xlsx';
 			header( 'Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' );
 			header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
 			header( 'Content-Length: ' . strlen( $content ) );

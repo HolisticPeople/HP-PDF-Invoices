@@ -90,12 +90,32 @@ class DOCXMaker {
 	 * @return string
 	 */
 	protected function sanitizeText( $text ) {
-		// Decode HTML entities
-		$text = html_entity_decode( $text, ENT_QUOTES, 'UTF-8' );
-		// Remove any remaining HTML tags
+		if ( empty( $text ) ) {
+			return '';
+		}
+		
+		// Convert to string if not already
+		$text = (string) $text;
+		
+		// Remove any remaining HTML tags first
 		$text = strip_tags( $text );
+		
+		// Decode HTML entities (multiple passes to handle nested encoding)
+		$text = html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		$text = html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		
+		// Replace non-breaking spaces with regular spaces
+		$text = str_replace( array( "\xC2\xA0", '&nbsp;' ), ' ', $text );
+		
 		// Remove control characters except newlines and tabs
 		$text = preg_replace( '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $text );
+		
+		// Normalize whitespace
+		$text = preg_replace( '/\s+/', ' ', $text );
+		
+		// Trim
+		$text = trim( $text );
+		
 		return $text;
 	}
 
