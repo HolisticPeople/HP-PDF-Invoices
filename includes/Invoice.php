@@ -3,7 +3,7 @@
  * Invoice Document Class
  * 
  * @package HP_PDF_Invoices
- * @version 1.2.15
+ * @version 1.2.16
  * @author Amnon Manneberg
  */
 namespace HP_PDFI;
@@ -216,16 +216,18 @@ class Invoice {
 		$currency = $this->order->get_currency();
 
 		// 1. Calculate Product/Item Discounts
-		// This is the difference between original subtotal and discounted items total
+		// get_subtotal() = original price × qty (before any discounts)
+		// get_total() = line total after product discounts (but typically BEFORE points coupon)
 		$items_subtotal = 0;  // Original prices (gross)
 		$items_total = 0;     // After product discounts
 		
 		foreach ( $this->order->get_items() as $item ) {
 			$items_subtotal += (float) $item->get_subtotal();  // Original line total
-			$items_total += (float) $item->get_total();        // Discounted line total
+			$items_total += (float) $item->get_total();        // After product discounts
 		}
 		
 		// 2. Get Points Discount from YITH meta
+		// Points are typically applied as a coupon/fee, NOT at the item level
 		$points_count = (int) $this->order->get_meta( '_ywpar_coupon_points' );
 		$points_amount = (float) $this->order->get_meta( '_ywpar_coupon_amount' );
 		
@@ -244,15 +246,13 @@ class Invoice {
 			}
 		}
 		
-		// 3. Calculate the Product Discount (excluding points)
-		// Item discounts include both product markdowns AND points applied at line level
-		$total_item_discount = $items_subtotal - $items_total;
-		
-		// Product discount = total item discount minus points (which may be applied to items)
-		$product_discount = $total_item_discount - $points_amount;
+		// 3. Calculate the Product Discount
+		// This is the difference between original subtotals and item totals
+		// YITH points are applied as a separate coupon/fee, so don't subtract them here
+		$product_discount = $items_subtotal - $items_total;
 		$product_discount = max( 0, $product_discount ); // Ensure not negative
 		
-		// Also add any negative fees (like "Offer Savings")
+		// Also add any negative fees (like "Offer Savings") to product discount
 		foreach ( $this->order->get_fees() as $fee ) {
 			$fee_total = (float) $fee->get_total();
 			if ( $fee_total < 0 ) {
@@ -264,7 +264,7 @@ class Invoice {
 		if ( $product_discount > 0.01 ) {
 			$summary[] = array(
 				'label' => __( 'Product Discount:', 'hp-pdf-invoices' ),
-				'value' => '-' . \wc_price( $product_discount, $currency ),
+				'value' => '-' . \wc_price( $product_discount, array( 'currency' => $currency ) ),
 				'raw'   => $product_discount,
 			);
 		}
@@ -275,7 +275,7 @@ class Invoice {
 				: __( 'Points Discount:', 'hp-pdf-invoices' );
 			$summary[] = array(
 				'label' => $points_label,
-				'value' => '-' . \wc_price( $points_amount, $currency ),
+				'value' => '-' . \wc_price( $points_amount, array( 'currency' => $currency ) ),
 				'raw'   => $points_amount,
 			);
 		}
