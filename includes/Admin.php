@@ -65,7 +65,7 @@ class Admin {
 		$show_images       = $order->get_meta( '_hp_pdfi_show_images' );
 
 		// Set defaults if not set
-		if ( '' === $show_paid_price ) $show_paid_price = 'yes';
+		if ( '' === $show_paid_price ) $show_paid_price = 'no';
 		if ( '' === $printer_friendly ) $printer_friendly = 'no';
 		if ( '' === $show_images ) $show_images = 'yes';
 

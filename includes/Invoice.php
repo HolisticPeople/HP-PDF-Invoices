@@ -3,7 +3,7 @@
  * Invoice Document Class
  * 
  * @package HP_PDF_Invoices
- * @version 1.2.17
+ * @version 1.2.18
  * @author Amnon Manneberg
  */
 namespace HP_PDFI;
@@ -312,17 +312,21 @@ class Invoice {
 		);
 
 		// 2. Discounts - Always show if present
+		// Track total discounts for grand total calculation
 		$discounts = $this->get_discount_summary();
+		$total_discount = 0;
 		foreach ( $discounts as $index => $discount ) {
 			$totals['discount_' . $index] = array(
 				'label' => $discount['label'],
 				'value' => $discount['value'],
 				'class' => 'discount-line',
 			);
+			$total_discount += $discount['raw'];
 		}
 
 		// 3. Shipping
-		if ( (float) $this->order->get_shipping_total() > 0 ) {
+		$shipping_total = (float) $this->order->get_shipping_total();
+		if ( $shipping_total > 0 ) {
 			// Clean shipping display to remove {{CARRIER}} template markers
 			$shipping_display = $this->order->get_shipping_to_display();
 			$shipping_display = $this->clean_shipping_method( $shipping_display );
@@ -334,17 +338,22 @@ class Invoice {
 		}
 
 		// 4. Taxes
+		$tax_total = 0;
 		foreach ( $this->order->get_tax_totals() as $code => $tax ) {
 			$totals[ 'tax_' . $code ] = array(
 				'label' => $tax->label,
 				'value' => $tax->formatted_amount,
 			);
+			$tax_total += (float) $tax->amount;
 		}
 
-		// 5. Total (from WooCommerce - this is the actual paid total)
+		// 5. Calculate Grand Total the same way EAO does:
+		// Grand Total = Subtotal - Product Discount - Points Discount + Shipping + Tax
+		$grand_total = $items_subtotal - $total_discount + $shipping_total + $tax_total;
+		
 		$totals['total'] = array(
 			'label' => __( 'Total', 'hp-pdf-invoices' ),
-			'value' => $this->order->get_formatted_order_total(),
+			'value' => \wc_price( $grand_total, array( 'currency' => $currency ) ),
 		);
 
 		return $totals;

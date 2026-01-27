@@ -3,7 +3,7 @@
  * DOCX Maker - Generates Word documents for invoices
  * 
  * @package HP_PDF_Invoices
- * @version 1.2.17
+ * @version 1.2.18
  * @author Amnon Manneberg
  */
 namespace HP_PDFI;
@@ -363,22 +363,22 @@ class DOCXMaker {
 		
 		// Calculate subtotal from original item prices
 		$subtotal = 0;
-		$items_total = 0;
 		foreach ( $order->get_items() as $item ) {
 			$subtotal += (float) $item->get_subtotal(); // Original prices
-			$items_total += (float) $item->get_total(); // Discounted prices
 		}
 		
 		$rows[] = array( 'label' => __( 'Subtotal', 'hp-pdf-invoices' ), 'value' => $this->formatMoney( $subtotal, $currency ) );
 		
-		// Get discount breakdown from Invoice class
+		// Get discount breakdown from Invoice class and track total discounts
 		$discounts = $this->invoice->get_discount_summary();
+		$total_discount = 0;
 		foreach ( $discounts as $discount ) {
 			$rows[] = array( 
 				'label' => rtrim( $discount['label'], ':' ), 
 				'value' => '-' . $this->formatMoney( $discount['raw'], $currency ), 
 				'italic' => true 
 			);
+			$total_discount += $discount['raw'];
 		}
 		
 		// Shipping - include method name, cleaned of {{}} markers
@@ -400,8 +400,10 @@ class DOCXMaker {
 			$rows[] = array( 'label' => __( 'Tax', 'hp-pdf-invoices' ), 'value' => $this->formatMoney( $tax, $currency ) );
 		}
 		
-		// Total
-		$rows[] = array( 'label' => __( 'Total', 'hp-pdf-invoices' ), 'value' => $this->formatMoney( (float) $order->get_total(), $currency ), 'bold' => true );
+		// Calculate Grand Total the same way EAO does:
+		// Grand Total = Subtotal - Product Discount - Points Discount + Shipping + Tax
+		$grand_total = $subtotal - $total_discount + $shipping + $tax;
+		$rows[] = array( 'label' => __( 'Total', 'hp-pdf-invoices' ), 'value' => $this->formatMoney( $grand_total, $currency ), 'bold' => true );
 
 		// Add rows to table
 		foreach ( $rows as $row ) {
