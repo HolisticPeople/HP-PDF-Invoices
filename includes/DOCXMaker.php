@@ -3,7 +3,7 @@
  * DOCX Maker - Generates Word documents for invoices
  * 
  * @package HP_PDF_Invoices
- * @version 1.2.14
+ * @version 1.2.15
  * @author Amnon Manneberg
  */
 namespace HP_PDFI;
@@ -326,19 +326,18 @@ class DOCXMaker {
 			$table->addCell( 1200 )->addText( $product ? $this->sanitizeText( $product->get_sku() ) : '' );
 			$table->addCell( 800 )->addText( $quantity, array(), array( 'alignment' => Jc::CENTER ) );
 			
-			// Price cell - show strikethrough original + paid if discounted
+			// Price cell - show original price when not showing paid price
 			$priceCell = $table->addCell( 1500 );
-			if ( ! $show_paid_price && $has_discount ) {
-				$textRun = $priceCell->addTextRun( array( 'alignment' => Jc::END ) );
-				$textRun->addText( $this->formatMoney( $original_unit, $currency ), array( 'strikethrough' => true, 'color' => '999999' ) );
-				$textRun->addText( ' ' );
-				$textRun->addText( $this->formatMoney( $paid_unit, $currency ) );
+			if ( ! $show_paid_price ) {
+				// Show original (pre-discount) price
+				$priceCell->addText( $this->formatMoney( $original_unit, $currency ), array(), array( 'alignment' => Jc::END ) );
 			} else {
 				$priceCell->addText( $this->formatMoney( $paid_unit, $currency ), array(), array( 'alignment' => Jc::END ) );
 			}
 			
-			// Line Total cell
-			$table->addCell( 1500 )->addText( $this->formatMoney( $line_total, $currency ), array(), array( 'alignment' => Jc::END ) );
+			// Line Total cell - show original or paid based on mode
+			$display_line_total = $show_paid_price ? $line_total : $line_subtotal;
+			$table->addCell( 1500 )->addText( $this->formatMoney( $display_line_total, $currency ), array(), array( 'alignment' => Jc::END ) );
 		}
 
 		$section->addTextBreak( 1 );
@@ -359,23 +358,27 @@ class DOCXMaker {
 			'alignment'   => Jc::END,
 		) );
 
-		// Build simple totals directly from order data (no HTML)
+		// Build totals from order data with full discount breakdown like EAO
 		$rows = array();
 		
-		// Calculate subtotal and product discount from items
+		// Calculate subtotal from original item prices
 		$subtotal = 0;
 		$items_total = 0;
 		foreach ( $order->get_items() as $item ) {
 			$subtotal += (float) $item->get_subtotal(); // Original prices
 			$items_total += (float) $item->get_total(); // Discounted prices
 		}
-		$product_discount = $subtotal - $items_total; // Total product discount
 		
 		$rows[] = array( 'label' => __( 'Subtotal', 'hp-pdf-invoices' ), 'value' => $this->formatMoney( $subtotal, $currency ) );
 		
-		// Discount (if any and if not showing paid price)
-		if ( ! $this->invoice->show_paid_price && $product_discount > 0.01 ) {
-			$rows[] = array( 'label' => __( 'Discount', 'hp-pdf-invoices' ), 'value' => '-' . $this->formatMoney( $product_discount, $currency ), 'italic' => true );
+		// Get discount breakdown from Invoice class
+		$discounts = $this->invoice->get_discount_summary();
+		foreach ( $discounts as $discount ) {
+			$rows[] = array( 
+				'label' => rtrim( $discount['label'], ':' ), 
+				'value' => '-' . $this->formatMoney( $discount['raw'], $currency ), 
+				'italic' => true 
+			);
 		}
 		
 		// Shipping - include method name, cleaned of {{}} markers

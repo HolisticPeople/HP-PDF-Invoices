@@ -3,7 +3,7 @@
  * Invoice Document Class
  * 
  * @package HP_PDF_Invoices
- * @version 1.2.14
+ * @version 1.2.15
  * @author Amnon Manneberg
  */
 namespace HP_PDFI;
@@ -29,7 +29,8 @@ class Invoice {
 		$this->order = $order;
 
 		// Load options from order meta, with overrides from $_GET for immediate preview
-		$this->show_paid_price   = $order->get_meta( '_hp_pdfi_show_paid_price' ) !== 'no';
+		// Default to FALSE (show original prices + discount breakdown like EAO)
+		$this->show_paid_price   = $order->get_meta( '_hp_pdfi_show_paid_price' ) === 'yes';
 		$this->printer_friendly = $order->get_meta( '_hp_pdfi_printer_friendly' ) === 'yes';
 		$this->show_images       = $order->get_meta( '_hp_pdfi_show_images' ) !== 'no';
 
@@ -204,57 +205,78 @@ class Invoice {
 		return 'data:image/' . $type . ';base64,' . base64_encode( $data );
 	}
 
+	/**
+	 * Get discount breakdown for the order
+	 * Calculates Product Discounts and Points Discounts separately like EAO
+	 *
+	 * @return array
+	 */
 	public function get_discount_summary() {
-		if ( $this->show_paid_price ) {
-			return array();
-		}
-
 		$summary = array();
+		$currency = $this->order->get_currency();
 
-		// 1. Points Redeemed
-		$points = $this->order->get_meta( '_ywpar_coupon_points' );
-		$points_amount = (float) $this->order->get_meta( '_ywpar_coupon_amount' );
-
-		// 2. Offer & Item Discounts
-		// We want to capture:
-		// - Item level discounts (difference between subtotal and total)
-		// - Fees that are negative (like Offer Savings)
-		// - Coupons that are NOT points coupons
+		// 1. Calculate Product/Item Discounts
+		// This is the difference between original subtotal and discounted items total
+		$items_subtotal = 0;  // Original prices (gross)
+		$items_total = 0;     // After product discounts
 		
-		$item_discounts = 0;
 		foreach ( $this->order->get_items() as $item ) {
-			$item_discounts += ( (float)$item->get_subtotal() - (float)$item->get_total() );
+			$items_subtotal += (float) $item->get_subtotal();  // Original line total
+			$items_total += (float) $item->get_total();        // Discounted line total
 		}
-
-		// Also check for "Offer Savings" or any negative fees
-		$negative_fees = 0;
+		
+		// 2. Get Points Discount from YITH meta
+		$points_count = (int) $this->order->get_meta( '_ywpar_coupon_points' );
+		$points_amount = (float) $this->order->get_meta( '_ywpar_coupon_amount' );
+		
+		// If no meta, check for YITH discount coupons
+		if ( $points_amount < 0.01 ) {
+			$used_coupons = $this->order->get_coupon_codes();
+			foreach ( $used_coupons as $coupon_code ) {
+				if ( strpos( $coupon_code, 'ywpar_discount_' ) === 0 ) {
+					$coupon = new \WC_Coupon( $coupon_code );
+					if ( $coupon->get_id() && ! empty( $coupon->get_meta( 'ywpar_coupon' ) ) ) {
+						$points_amount = (float) $coupon->get_amount();
+						$points_count = (int) ( $points_amount * 10 ); // 10 points = $1
+						break;
+					}
+				}
+			}
+		}
+		
+		// 3. Calculate the Product Discount (excluding points)
+		// Item discounts include both product markdowns AND points applied at line level
+		$total_item_discount = $items_subtotal - $items_total;
+		
+		// Product discount = total item discount minus points (which may be applied to items)
+		$product_discount = $total_item_discount - $points_amount;
+		$product_discount = max( 0, $product_discount ); // Ensure not negative
+		
+		// Also add any negative fees (like "Offer Savings")
 		foreach ( $this->order->get_fees() as $fee ) {
 			$fee_total = (float) $fee->get_total();
 			if ( $fee_total < 0 ) {
-				$negative_fees += abs( $fee_total );
+				$product_discount += abs( $fee_total );
 			}
 		}
 
-		// Calculate "Offer & Item Discounts"
-		// This is (Total Item Discounts + Negative Fees) - Points Amount
-		// because points amount is usually applied as an item discount by WC.
-		$offer_and_other_discounts = ( $item_discounts + $negative_fees ) - $points_amount;
-		
-		// Ensure it's not negative due to rounding
-		$offer_and_other_discounts = max( 0, $offer_and_other_discounts );
-
-		if ( $offer_and_other_discounts > 0.001 ) {
+		// 4. Build the summary array
+		if ( $product_discount > 0.01 ) {
 			$summary[] = array(
-				'label' => __( 'Offer & Item Discounts:', 'hp-pdf-invoices' ),
-				'value' => '-' . \wc_price( $offer_and_other_discounts, array( 'currency' => $this->order->get_currency() ) ),
+				'label' => __( 'Product Discount:', 'hp-pdf-invoices' ),
+				'value' => '-' . \wc_price( $product_discount, $currency ),
+				'raw'   => $product_discount,
 			);
 		}
 
-		if ( $points_amount > 0.001 ) {
-			$points_label = $points ? sprintf( __( 'Points Redeemed (%d pts):', 'hp-pdf-invoices' ), $points ) : __( 'Points Redeemed:', 'hp-pdf-invoices' );
+		if ( $points_amount > 0.01 ) {
+			$points_label = $points_count > 0 
+				? sprintf( __( 'Points Discount (%d pts):', 'hp-pdf-invoices' ), $points_count ) 
+				: __( 'Points Discount:', 'hp-pdf-invoices' );
 			$summary[] = array(
 				'label' => $points_label,
-				'value' => '-' . \wc_price( $points_amount, array( 'currency' => $this->order->get_currency() ) ),
+				'value' => '-' . \wc_price( $points_amount, $currency ),
+				'raw'   => $points_amount,
 			);
 		}
 
@@ -263,23 +285,28 @@ class Invoice {
 
 	public function get_totals() {
 		$totals = array();
+		$currency = $this->order->get_currency();
 		
-		// 1. Subtotal (Before any discounts)
+		// 1. Subtotal (Original prices before any discounts)
+		// Calculate from item subtotals for accuracy
+		$items_subtotal = 0;
+		foreach ( $this->order->get_items() as $item ) {
+			$items_subtotal += (float) $item->get_subtotal();
+		}
+		
 		$totals['subtotal'] = array(
 			'label' => __( 'Subtotal', 'hp-pdf-invoices' ),
-			'value' => $this->order->get_subtotal_to_display(),
+			'value' => \wc_price( $items_subtotal, array( 'currency' => $currency ) ),
 		);
 
-		// 2. Discounts (If show_paid_price is false)
-		if ( ! $this->show_paid_price ) {
-			$discounts = $this->get_discount_summary();
-			foreach ( $discounts as $index => $discount ) {
-				$totals['discount_' . $index] = array(
-					'label' => $discount['label'],
-					'value' => $discount['value'],
-					'class' => 'discount-line',
-				);
-			}
+		// 2. Discounts - Always show if present
+		$discounts = $this->get_discount_summary();
+		foreach ( $discounts as $index => $discount ) {
+			$totals['discount_' . $index] = array(
+				'label' => $discount['label'],
+				'value' => $discount['value'],
+				'class' => 'discount-line',
+			);
 		}
 
 		// 3. Shipping
@@ -302,7 +329,7 @@ class Invoice {
 			);
 		}
 
-		// 5. Total
+		// 5. Total (from WooCommerce - this is the actual paid total)
 		$totals['total'] = array(
 			'label' => __( 'Total', 'hp-pdf-invoices' ),
 			'value' => $this->order->get_formatted_order_total(),
