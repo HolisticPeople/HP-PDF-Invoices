@@ -3,7 +3,7 @@
  * Invoice Document Class
  * 
  * @package HP_PDF_Invoices
- * @version 1.2.16
+ * @version 1.2.17
  * @author Amnon Manneberg
  */
 namespace HP_PDFI;
@@ -207,7 +207,8 @@ class Invoice {
 
 	/**
 	 * Get discount breakdown for the order
-	 * Calculates Product Discounts and Points Discounts separately like EAO
+	 * Fetches Product Discounts from EAO meta and Points Discounts from YITH meta
+	 * No complex calculations - just read stored values
 	 *
 	 * @return array
 	 */
@@ -215,23 +216,48 @@ class Invoice {
 		$summary = array();
 		$currency = $this->order->get_currency();
 
-		// 1. Calculate Product/Item Discounts
-		// get_subtotal() = original price × qty (before any discounts)
-		// get_total() = line total after product discounts (but typically BEFORE points coupon)
-		$items_subtotal = 0;  // Original prices (gross)
-		$items_total = 0;     // After product discounts
+		// 1. Get Product Discount from EAO stored discount percentages
+		// EAO stores: _eao_item_discount_percent per item, _eao_global_product_discount_percent on order
+		$global_discount_percent = (float) $this->order->get_meta( '_eao_global_product_discount_percent' );
+		$product_discount = 0;
 		
 		foreach ( $this->order->get_items() as $item ) {
-			$items_subtotal += (float) $item->get_subtotal();  // Original line total
-			$items_total += (float) $item->get_total();        // After product discounts
+			$original_total = (float) $item->get_subtotal();
+			
+			// Get item-specific discount percent from EAO meta
+			$item_discount_percent = (float) $item->get_meta( '_eao_item_discount_percent' );
+			$exclude_global = $item->get_meta( '_eao_exclude_global_discount' ) === 'yes';
+			
+			// Determine which discount to apply
+			if ( $item_discount_percent > 0 ) {
+				// Item has its own discount percent
+				$discount_percent = $item_discount_percent;
+			} elseif ( ! $exclude_global && $global_discount_percent > 0 ) {
+				// Use global discount
+				$discount_percent = $global_discount_percent;
+			} else {
+				$discount_percent = 0;
+			}
+			
+			if ( $discount_percent > 0 ) {
+				$discount_amount = $original_total * ( $discount_percent / 100 );
+				$product_discount += $discount_amount;
+			}
 		}
 		
-		// 2. Get Points Discount from YITH meta
-		// Points are typically applied as a coupon/fee, NOT at the item level
+		// Also add any negative fees (like "Offer Savings")
+		foreach ( $this->order->get_fees() as $fee ) {
+			$fee_total = (float) $fee->get_total();
+			if ( $fee_total < 0 ) {
+				$product_discount += abs( $fee_total );
+			}
+		}
+		
+		// 2. Get Points Discount from YITH meta (stored values, no calculation)
 		$points_count = (int) $this->order->get_meta( '_ywpar_coupon_points' );
 		$points_amount = (float) $this->order->get_meta( '_ywpar_coupon_amount' );
 		
-		// If no meta, check for YITH discount coupons
+		// Fallback: check for YITH discount coupons if meta not found
 		if ( $points_amount < 0.01 ) {
 			$used_coupons = $this->order->get_coupon_codes();
 			foreach ( $used_coupons as $coupon_code ) {
@@ -245,22 +271,8 @@ class Invoice {
 				}
 			}
 		}
-		
-		// 3. Calculate the Product Discount
-		// This is the difference between original subtotals and item totals
-		// YITH points are applied as a separate coupon/fee, so don't subtract them here
-		$product_discount = $items_subtotal - $items_total;
-		$product_discount = max( 0, $product_discount ); // Ensure not negative
-		
-		// Also add any negative fees (like "Offer Savings") to product discount
-		foreach ( $this->order->get_fees() as $fee ) {
-			$fee_total = (float) $fee->get_total();
-			if ( $fee_total < 0 ) {
-				$product_discount += abs( $fee_total );
-			}
-		}
 
-		// 4. Build the summary array
+		// 3. Build the summary array
 		if ( $product_discount > 0.01 ) {
 			$summary[] = array(
 				'label' => __( 'Product Discount:', 'hp-pdf-invoices' ),

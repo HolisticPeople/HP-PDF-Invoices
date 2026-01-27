@@ -3,7 +3,7 @@
  * DOCX Maker - Generates Word documents for invoices
  * 
  * @package HP_PDF_Invoices
- * @version 1.2.16
+ * @version 1.2.17
  * @author Amnon Manneberg
  */
 namespace HP_PDFI;
