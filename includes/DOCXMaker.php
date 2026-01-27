@@ -3,7 +3,7 @@
  * DOCX Maker - Generates Word documents for invoices
  * 
  * @package HP_PDF_Invoices
- * @version 1.2.0
+ * @version 1.2.14
  * @author Amnon Manneberg
  */
 namespace HP_PDFI;
@@ -49,6 +49,13 @@ class DOCXMaker {
 		// Set default font
 		$this->phpWord->setDefaultFontName( 'Arial' );
 		$this->phpWord->setDefaultFontSize( 10 );
+		
+		// Set default paragraph style for tighter line spacing
+		$this->phpWord->setDefaultParagraphStyle( array(
+			'spaceAfter'  => 0,
+			'spaceBefore' => 0,
+			'lineHeight'  => 1.0,
+		) );
 	}
 
 	/**
@@ -58,26 +65,50 @@ class DOCXMaker {
 	 */
 	public function output() {
 		try {
+			error_log( 'HP-PDF-Invoices DOCX: Starting generation for order ' . $this->order->get_id() );
+			
 			$section = $this->phpWord->addSection();
 
+			error_log( 'HP-PDF-Invoices DOCX: Adding header' );
 			$this->addHeader( $section );
+			
+			error_log( 'HP-PDF-Invoices DOCX: Adding title' );
 			$this->addInvoiceTitle( $section );
+			
+			error_log( 'HP-PDF-Invoices DOCX: Adding addresses' );
 			$this->addAddressesAndOrderInfo( $section );
+			
+			error_log( 'HP-PDF-Invoices DOCX: Adding products' );
 			$this->addProductsTable( $section );
+			
+			error_log( 'HP-PDF-Invoices DOCX: Adding totals (show_paid_price=' . ($this->invoice->show_paid_price ? 'yes' : 'no') . ')' );
 			$this->addTotalsTable( $section );
+			
+			error_log( 'HP-PDF-Invoices DOCX: Adding notes' );
 			$this->addCustomerNotes( $section );
 
 			// Save to temp file and return content
 			$temp_file = sys_get_temp_dir() . '/hp_pdfi_docx_' . time() . '_' . wp_rand() . '.docx';
+			error_log( 'HP-PDF-Invoices DOCX: Saving to ' . $temp_file );
+			
 			$writer = IOFactory::createWriter( $this->phpWord, 'Word2007' );
 			$writer->save( $temp_file );
 
+			if ( ! file_exists( $temp_file ) ) {
+				error_log( 'HP-PDF-Invoices DOCX: Temp file was not created!' );
+				return false;
+			}
+
 			$content = file_get_contents( $temp_file );
+			$size = strlen( $content );
 			@unlink( $temp_file );
 
+			error_log( 'HP-PDF-Invoices DOCX: Generated successfully, size=' . $size . ' bytes' );
 			return $content;
+			
 		} catch ( \Exception $e ) {
 			error_log( 'HP-PDF-Invoices DOCX Error: ' . $e->getMessage() );
+			error_log( 'HP-PDF-Invoices DOCX Error Trace: ' . $e->getTraceAsString() );
 			return false;
 		}
 	}
@@ -97,12 +128,17 @@ class DOCXMaker {
 		// Convert to string if not already
 		$text = (string) $text;
 		
-		// Remove any remaining HTML tags first
-		$text = strip_tags( $text );
+		// Use WordPress functions for better entity handling
+		$text = wp_strip_all_tags( $text );
 		
-		// Decode HTML entities (multiple passes to handle nested encoding)
+		// Decode ALL HTML entities including numeric ones like &#36;
+		$text = wp_specialchars_decode( $text, ENT_QUOTES );
 		$text = html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-		$text = html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		
+		// Handle numeric entities that might remain
+		$text = preg_replace_callback( '/&#(\d+);/', function( $matches ) {
+			return chr( intval( $matches[1] ) );
+		}, $text );
 		
 		// Replace non-breaking spaces with regular spaces
 		$text = str_replace( array( "\xC2\xA0", '&nbsp;' ), ' ', $text );
@@ -145,7 +181,7 @@ class DOCXMaker {
 			if ( $logo_path && file_exists( $logo_path ) ) {
 				// Get image dimensions to maintain aspect ratio
 				$image_info = @getimagesize( $logo_path );
-				$max_width = 150; // Max width in points
+				$max_width = 50; // Max width in points (matching PDF proportions)
 				
 				if ( $image_info ) {
 					$orig_width = $image_info[0];
@@ -170,16 +206,15 @@ class DOCXMaker {
 			$cell1->addText( $shop_name, array( 'bold' => true, 'size' => 14 ) );
 		}
 
-		// Shop info cell
+		// Shop info cell - tight line spacing
+		$tightPara = array( 'alignment' => Jc::END, 'spaceAfter' => 0, 'spaceBefore' => 0 );
 		$cell2 = $table->addCell( 4500 );
-		$cell2->addText( $this->sanitizeText( $shop_name ), array( 'bold' => true ), array( 'alignment' => Jc::END ) );
+		$cell2->addText( $this->sanitizeText( $shop_name ), array( 'bold' => true ), $tightPara );
 		
 		$address_lines = explode( "\n", $shop_address );
 		foreach ( $address_lines as $line ) {
-			$cell2->addText( $this->sanitizeText( trim( $line ) ), array(), array( 'alignment' => Jc::END ) );
+			$cell2->addText( $this->sanitizeText( trim( $line ) ), array(), $tightPara );
 		}
-
-		$section->addTextBreak( 1 );
 	}
 
 	/**
@@ -191,9 +226,8 @@ class DOCXMaker {
 		$section->addText(
 			__( 'INVOICE', 'hp-pdf-invoices' ),
 			array( 'bold' => true, 'size' => 24 ),
-			array( 'alignment' => Jc::START )
+			array( 'alignment' => Jc::START, 'spaceAfter' => 60 )
 		);
-		$section->addTextBreak( 1 );
 	}
 
 	/**
@@ -205,6 +239,10 @@ class DOCXMaker {
 		$prefix = get_option( 'hp_pdfi_invoice_prefix', '' );
 		$order = $this->order;
 
+		// Tight paragraph style - no extra spacing between lines
+		$tight = array( 'spaceAfter' => 0, 'spaceBefore' => 0 );
+		$tightBold = array( 'spaceAfter' => 20, 'spaceBefore' => 0 ); // Small gap after headers
+
 		// Create 3-column table for addresses and order info
 		$table = $section->addTable( array(
 			'borderSize' => 0,
@@ -215,31 +253,29 @@ class DOCXMaker {
 
 		// Billing Address
 		$cell1 = $table->addCell( 3000 );
-		$cell1->addText( __( 'Billing Address', 'hp-pdf-invoices' ), array( 'bold' => true, 'size' => 11 ) );
+		$cell1->addText( __( 'Billing Address', 'hp-pdf-invoices' ), array( 'bold' => true, 'size' => 11 ), $tightBold );
 		$billing_lines = explode( '<br/>', $order->get_formatted_billing_address() );
 		foreach ( $billing_lines as $line ) {
-			$cell1->addText( $this->sanitizeText( $line ) );
+			$cell1->addText( $this->sanitizeText( $line ), array(), $tight );
 		}
-		$cell1->addText( $this->sanitizeText( $order->get_billing_email() ) );
-		$cell1->addText( $this->sanitizeText( $order->get_billing_phone() ) );
+		$cell1->addText( $this->sanitizeText( $order->get_billing_email() ), array(), $tight );
+		$cell1->addText( $this->sanitizeText( $order->get_billing_phone() ), array(), $tight );
 
 		// Shipping Address
 		$cell2 = $table->addCell( 3000 );
-		$cell2->addText( __( 'Shipping Address', 'hp-pdf-invoices' ), array( 'bold' => true, 'size' => 11 ) );
+		$cell2->addText( __( 'Shipping Address', 'hp-pdf-invoices' ), array( 'bold' => true, 'size' => 11 ), $tightBold );
 		$shipping_lines = explode( '<br/>', $order->get_formatted_shipping_address() );
 		foreach ( $shipping_lines as $line ) {
-			$cell2->addText( $this->sanitizeText( $line ) );
+			$cell2->addText( $this->sanitizeText( $line ), array(), $tight );
 		}
 
 		// Order Info
 		$cell3 = $table->addCell( 3000 );
-		$cell3->addText( __( 'Invoice Number:', 'hp-pdf-invoices' ) . ' ' . $prefix . $order->get_order_number() );
-		$cell3->addText( __( 'Invoice Date:', 'hp-pdf-invoices' ) . ' ' . date_i18n( get_option( 'date_format' ) ) );
-		$cell3->addText( __( 'Order Number:', 'hp-pdf-invoices' ) . ' ' . $order->get_order_number() );
-		$cell3->addText( __( 'Order Date:', 'hp-pdf-invoices' ) . ' ' . date_i18n( get_option( 'date_format' ), strtotime( $order->get_date_created() ) ) );
-		$cell3->addText( __( 'Payment Method:', 'hp-pdf-invoices' ) . ' ' . $this->sanitizeText( $order->get_payment_method_title() ) );
-
-		$section->addTextBreak( 1 );
+		$cell3->addText( __( 'Invoice Number:', 'hp-pdf-invoices' ) . ' ' . $prefix . $order->get_order_number(), array(), $tight );
+		$cell3->addText( __( 'Invoice Date:', 'hp-pdf-invoices' ) . ' ' . date_i18n( get_option( 'date_format' ) ), array(), $tight );
+		$cell3->addText( __( 'Order Number:', 'hp-pdf-invoices' ) . ' ' . $order->get_order_number(), array(), $tight );
+		$cell3->addText( __( 'Order Date:', 'hp-pdf-invoices' ) . ' ' . date_i18n( get_option( 'date_format' ), strtotime( $order->get_date_created() ) ), array(), $tight );
+		$cell3->addText( __( 'Payment Method:', 'hp-pdf-invoices' ) . ' ' . $this->sanitizeText( $order->get_payment_method_title() ), array(), $tight );
 	}
 
 	/**
@@ -249,6 +285,8 @@ class DOCXMaker {
 	 */
 	protected function addProductsTable( $section ) {
 		$printer_friendly = $this->invoice->printer_friendly;
+		$show_paid_price = $this->invoice->show_paid_price;
+		$currency = $this->order->get_currency();
 
 		$tableStyle = array(
 			'borderSize'  => 6,
@@ -266,19 +304,41 @@ class DOCXMaker {
 
 		// Header row
 		$table->addRow();
-		$table->addCell( 5000, $headerStyle )->addText( __( 'Product', 'hp-pdf-invoices' ), $boldFont );
-		$table->addCell( 1500, $headerStyle )->addText( __( 'SKU', 'hp-pdf-invoices' ), $boldFont );
-		$table->addCell( 1000, $headerStyle )->addText( __( 'Qty', 'hp-pdf-invoices' ), $boldFont, array( 'alignment' => Jc::CENTER ) );
+		$table->addCell( 4000, $headerStyle )->addText( __( 'Product', 'hp-pdf-invoices' ), $boldFont );
+		$table->addCell( 1200, $headerStyle )->addText( __( 'SKU', 'hp-pdf-invoices' ), $boldFont );
+		$table->addCell( 800, $headerStyle )->addText( __( 'Qty', 'hp-pdf-invoices' ), $boldFont, array( 'alignment' => Jc::CENTER ) );
 		$table->addCell( 1500, $headerStyle )->addText( __( 'Price', 'hp-pdf-invoices' ), $boldFont, array( 'alignment' => Jc::END ) );
+		$table->addCell( 1500, $headerStyle )->addText( __( 'Total', 'hp-pdf-invoices' ), $boldFont, array( 'alignment' => Jc::END ) );
 
-		// Data rows - get_order_items() respects show_paid_price for pricing
-		$items = $this->invoice->get_order_items();
-		foreach ( $items as $item ) {
+		// Data rows
+		foreach ( $this->order->get_items() as $item ) {
+			$product = $item->get_product();
+			$quantity = $item->get_quantity();
+			$line_subtotal = (float) $item->get_subtotal(); // Original total
+			$line_total = (float) $item->get_total(); // Paid total (after discounts)
+			
+			$original_unit = $quantity > 0 ? $line_subtotal / $quantity : 0;
+			$paid_unit = $quantity > 0 ? $line_total / $quantity : 0;
+			$has_discount = $line_total < $line_subtotal;
+			
 			$table->addRow();
-			$table->addCell( 5000 )->addText( $this->sanitizeText( $item['name'] ) );
-			$table->addCell( 1500 )->addText( $this->sanitizeText( $item['sku'] ) );
-			$table->addCell( 1000 )->addText( $item['quantity'], array(), array( 'alignment' => Jc::CENTER ) );
-			$table->addCell( 1500 )->addText( $this->sanitizeText( $item['price'] ), array(), array( 'alignment' => Jc::END ) );
+			$table->addCell( 4000 )->addText( $this->sanitizeText( $item->get_name() ) );
+			$table->addCell( 1200 )->addText( $product ? $this->sanitizeText( $product->get_sku() ) : '' );
+			$table->addCell( 800 )->addText( $quantity, array(), array( 'alignment' => Jc::CENTER ) );
+			
+			// Price cell - show strikethrough original + paid if discounted
+			$priceCell = $table->addCell( 1500 );
+			if ( ! $show_paid_price && $has_discount ) {
+				$textRun = $priceCell->addTextRun( array( 'alignment' => Jc::END ) );
+				$textRun->addText( $this->formatMoney( $original_unit, $currency ), array( 'strikethrough' => true, 'color' => '999999' ) );
+				$textRun->addText( ' ' );
+				$textRun->addText( $this->formatMoney( $paid_unit, $currency ) );
+			} else {
+				$priceCell->addText( $this->formatMoney( $paid_unit, $currency ), array(), array( 'alignment' => Jc::END ) );
+			}
+			
+			// Line Total cell
+			$table->addCell( 1500 )->addText( $this->formatMoney( $line_total, $currency ), array(), array( 'alignment' => Jc::END ) );
 		}
 
 		$section->addTextBreak( 1 );
@@ -290,7 +350,8 @@ class DOCXMaker {
 	 * @param \PhpOffice\PhpWord\Element\Section $section
 	 */
 	protected function addTotalsTable( $section ) {
-		$printer_friendly = $this->invoice->printer_friendly;
+		$order = $this->order;
+		$currency = $order->get_currency();
 		
 		$table = $section->addTable( array(
 			'borderSize'  => 0,
@@ -298,25 +359,72 @@ class DOCXMaker {
 			'alignment'   => Jc::END,
 		) );
 
-		// get_totals() already respects show_paid_price option
-		$totals = $this->invoice->get_totals();
+		// Build simple totals directly from order data (no HTML)
+		$rows = array();
+		
+		// Calculate subtotal and product discount from items
+		$subtotal = 0;
+		$items_total = 0;
+		foreach ( $order->get_items() as $item ) {
+			$subtotal += (float) $item->get_subtotal(); // Original prices
+			$items_total += (float) $item->get_total(); // Discounted prices
+		}
+		$product_discount = $subtotal - $items_total; // Total product discount
+		
+		$rows[] = array( 'label' => __( 'Subtotal', 'hp-pdf-invoices' ), 'value' => $this->formatMoney( $subtotal, $currency ) );
+		
+		// Discount (if any and if not showing paid price)
+		if ( ! $this->invoice->show_paid_price && $product_discount > 0.01 ) {
+			$rows[] = array( 'label' => __( 'Discount', 'hp-pdf-invoices' ), 'value' => '-' . $this->formatMoney( $product_discount, $currency ), 'italic' => true );
+		}
+		
+		// Shipping - include method name, cleaned of {{}} markers
+		$shipping = (float) $order->get_shipping_total();
+		if ( $shipping > 0 ) {
+			$shipping_method = $order->get_shipping_method();
+			// Clean {{CARRIER}} template markers from shipping method name
+			$shipping_method = trim( preg_replace( '/\{\{[^}]+\}\}\s*/', '', $shipping_method ) );
+			$shipping_label = __( 'Shipping', 'hp-pdf-invoices' );
+			if ( ! empty( $shipping_method ) ) {
+				$shipping_label .= ' (' . $shipping_method . ')';
+			}
+			$rows[] = array( 'label' => $shipping_label, 'value' => $this->formatMoney( $shipping, $currency ) );
+		}
+		
+		// Tax
+		$tax = (float) $order->get_total_tax();
+		if ( $tax > 0 ) {
+			$rows[] = array( 'label' => __( 'Tax', 'hp-pdf-invoices' ), 'value' => $this->formatMoney( $tax, $currency ) );
+		}
+		
+		// Total
+		$rows[] = array( 'label' => __( 'Total', 'hp-pdf-invoices' ), 'value' => $this->formatMoney( (float) $order->get_total(), $currency ), 'bold' => true );
 
-		foreach ( $totals as $key => $total ) {
+		// Add rows to table
+		foreach ( $rows as $row ) {
 			$table->addRow();
 			$table->addCell( 5000 ); // Empty spacer cell
 			
-			// Check if this is a discount line
-			$isDiscount = isset( $total['class'] ) && $total['class'] === 'discount-line';
-			$isTotal = ( $key === 'total' );
+			$labelStyle = isset( $row['italic'] ) ? array( 'italic' => true ) : array();
+			$valueStyle = isset( $row['bold'] ) ? array( 'bold' => true, 'size' => 12 ) : ( isset( $row['italic'] ) ? array( 'italic' => true ) : array( 'bold' => true ) );
 			
-			$labelStyle = $isDiscount ? array( 'italic' => true ) : array();
-			$valueStyle = $isTotal ? array( 'bold' => true, 'size' => 12 ) : ( $isDiscount ? array( 'italic' => true, 'color' => $printer_friendly ? '000000' : '666666' ) : array( 'bold' => true ) );
-			
-			$table->addCell( 2500 )->addText( $this->sanitizeText( $total['label'] ), $labelStyle, array( 'alignment' => Jc::END ) );
-			$table->addCell( 1500 )->addText( $this->sanitizeText( $total['value'] ), $valueStyle, array( 'alignment' => Jc::END ) );
+			$table->addCell( 2500 )->addText( $row['label'], $labelStyle, array( 'alignment' => Jc::END ) );
+			$table->addCell( 1500 )->addText( $row['value'], $valueStyle, array( 'alignment' => Jc::END ) );
 		}
 
 		$section->addTextBreak( 1 );
+	}
+	
+	/**
+	 * Format money without HTML
+	 *
+	 * @param float $amount
+	 * @param string $currency
+	 * @return string
+	 */
+	protected function formatMoney( $amount, $currency = 'USD' ) {
+		$symbol = get_woocommerce_currency_symbol( $currency );
+		return $symbol . number_format( $amount, 2 );
 	}
 
 	/**

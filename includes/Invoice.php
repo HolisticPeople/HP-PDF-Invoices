@@ -3,7 +3,7 @@
  * Invoice Document Class
  * 
  * @package HP_PDF_Invoices
- * @version 1.2.0
+ * @version 1.2.14
  * @author Amnon Manneberg
  */
 namespace HP_PDFI;
@@ -91,16 +91,33 @@ class Invoice {
 	 * Output DOCX invoice
 	 */
 	public function output_docx() {
+		// Clear any previous output that might corrupt the binary
+		if ( ob_get_level() ) {
+			ob_end_clean();
+		}
+		
 		$docx_maker = new DOCXMaker( $this );
 		$content = $docx_maker->output();
 
-		if ( $content ) {
+		if ( $content && $content !== false ) {
 			$filename = $this->get_filename_base() . '.docx';
+			
+			// Ensure no output has been sent
+			if ( headers_sent( $file, $line ) ) {
+				error_log( "HP-PDF-Invoices: Headers already sent in $file on line $line" );
+				wp_die( 'Error generating DOCX: Headers already sent.' );
+			}
+			
 			header( 'Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document' );
 			header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
 			header( 'Content-Length: ' . strlen( $content ) );
 			header( 'Cache-Control: max-age=0' );
+			header( 'Pragma: public' );
+			
 			echo $content;
+			exit;
+		} else {
+			wp_die( 'Error generating DOCX document. Check the error log for details.' );
 		}
 	}
 
@@ -135,28 +152,42 @@ class Invoice {
 
 		foreach ( $items as $item_id => $item ) {
 			$product = $item->get_product();
-			$line_total = $item->get_total();
-			$line_subtotal = $item->get_subtotal();
+			$line_total = $item->get_total();        // Paid total (after discounts)
+			$line_subtotal = $item->get_subtotal();  // Original total (before discounts)
 			$quantity = $item->get_quantity();
 			
-			// Actual paid price per unit
-			$unit_price = $line_total / $quantity;
-			$original_unit_price = $line_subtotal / $quantity;
+			// Calculate unit prices
+			$paid_unit_price = $quantity > 0 ? $line_total / $quantity : 0;
+			$original_unit_price = $quantity > 0 ? $line_subtotal / $quantity : 0;
+			$has_discount = $line_total < $line_subtotal;
 
 			$data[] = array(
-				'id'            => $item_id,
-				'name'          => $item->get_name(),
-				'sku'           => $product ? $product->get_sku() : '',
-				'quantity'      => $quantity,
-				'price'         => \wc_price( $unit_price, array( 'currency' => $this->order->get_currency() ) ),
-				'original_price'=> \wc_price( $original_unit_price, array( 'currency' => $this->order->get_currency() ) ),
-				'total'         => \wc_price( $line_total, array( 'currency' => $this->order->get_currency() ) ),
-				'has_discount'  => $line_total < $line_subtotal,
-				'image'         => $this->show_images ? $this->get_product_image( $product ) : '',
+				'id'              => $item_id,
+				'name'            => $item->get_name(),
+				'sku'             => $product ? $product->get_sku() : '',
+				'quantity'        => $quantity,
+				// Unit prices
+				'price'           => \wc_price( $paid_unit_price, array( 'currency' => $this->order->get_currency() ) ),
+				'original_price'  => \wc_price( $original_unit_price, array( 'currency' => $this->order->get_currency() ) ),
+				// Line totals
+				'total'           => \wc_price( $line_total, array( 'currency' => $this->order->get_currency() ) ),
+				'original_total'  => \wc_price( $line_subtotal, array( 'currency' => $this->order->get_currency() ) ),
+				'has_discount'    => $has_discount,
+				'image'           => $this->show_images ? $this->get_product_image( $product ) : '',
 			);
 		}
 
 		return $data;
+	}
+
+	/**
+	 * Clean shipping method name by removing carrier template markers like {{USPS}}
+	 *
+	 * @param string $method_name
+	 * @return string
+	 */
+	public function clean_shipping_method( $method_name ) {
+		return trim( preg_replace( '/\{\{[^}]+\}\}\s*/', '', $method_name ) );
 	}
 
 	public function get_product_image( $product ) {
@@ -253,9 +284,13 @@ class Invoice {
 
 		// 3. Shipping
 		if ( (float) $this->order->get_shipping_total() > 0 ) {
+			// Clean shipping display to remove {{CARRIER}} template markers
+			$shipping_display = $this->order->get_shipping_to_display();
+			$shipping_display = $this->clean_shipping_method( $shipping_display );
+			
 			$totals['shipping'] = array(
 				'label' => __( 'Shipping', 'hp-pdf-invoices' ),
-				'value' => $this->order->get_shipping_to_display(),
+				'value' => $shipping_display,
 			);
 		}
 

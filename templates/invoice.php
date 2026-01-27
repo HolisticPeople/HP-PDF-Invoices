@@ -57,23 +57,25 @@ $prefix = get_option( 'hp_pdfi_invoice_prefix', '' );
 			margin-bottom: 20px;
 		}
 		th, td {
-			padding: 8px;
+			padding: 4px 8px;
 			text-align: left;
 			vertical-align: top;
 		}
 		.header-table td {
 			padding: 0;
+			vertical-align: top;
 		}
 		.logo {
-			max-height: 80px;
-			max-width: 250px;
+			max-height: 40px;
+			max-width: 125px;
 		}
 		.shop-info {
 			text-align: right;
+			line-height: 1.2;
 		}
 		.document-type-label {
 			font-size: 24pt;
-			margin: 20px 0;
+			margin: 10px 0;
 			<?php if ( ! $printer_friendly ) : ?>
 			background: #000;
 			color: #fff;
@@ -82,6 +84,19 @@ $prefix = get_option( 'hp_pdfi_invoice_prefix', '' );
 		}
 		.order-data-addresses td {
 			width: 33%;
+		}
+		.order-data-addresses td table {
+			margin-bottom: 0;
+		}
+		.order-data-addresses td table th {
+			width: 55%;
+			padding: 2px 4px;
+			white-space: nowrap;
+		}
+		.order-data-addresses td table td {
+			width: 45%;
+			padding: 2px 4px;
+			white-space: nowrap;
 		}
 		.order-details th {
 			<?php if ( ! $printer_friendly ) : ?>
@@ -207,6 +222,7 @@ $prefix = get_option( 'hp_pdfi_invoice_prefix', '' );
 			<th><?php _e( 'Product', 'hp-pdf-invoices' ); ?></th>
 			<th class="quantity-column"><?php _e( 'Qty', 'hp-pdf-invoices' ); ?></th>
 			<th class="price-column"><?php _e( 'Price', 'hp-pdf-invoices' ); ?></th>
+			<th class="price-column"><?php _e( 'Total', 'hp-pdf-invoices' ); ?></th>
 		</tr>
 	</thead>
 	<tbody>
@@ -221,10 +237,20 @@ $prefix = get_option( 'hp_pdfi_invoice_prefix', '' );
 				</td>
 				<td class="quantity-column"><?php echo $item['quantity']; ?></td>
 				<td class="price-column">
-					<?php if ( ! $show_paid_price && $item['has_discount'] ) : ?>
-						<span class="strikethrough"><?php echo $item['original_price']; ?></span><br>
+					<?php if ( ! $show_paid_price ) : ?>
+						<?php // Show original price when not showing paid price ?>
+						<?php echo $item['original_price']; ?>
+					<?php else : ?>
+						<?php echo $item['price']; ?>
 					<?php endif; ?>
-					<?php echo $item['price']; ?>
+				</td>
+				<td class="price-column">
+					<?php if ( ! $show_paid_price ) : ?>
+						<?php // Show original line total when not showing paid price ?>
+						<?php echo $item['original_total']; ?>
+					<?php else : ?>
+						<?php echo $item['total']; ?>
+					<?php endif; ?>
 				</td>
 			</tr>
 		<?php endforeach; ?>
