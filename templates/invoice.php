@@ -144,6 +144,10 @@ $prefix = get_option( 'hp_pdfi_invoice_prefix', '' );
 			color: #999;
 			font-size: 0.9em;
 		}
+		.discount-badge {
+			color: #4caf50;
+			font-size: 0.85em;
+		}
 		.product-image {
 			width: 40px;
 			height: 40px;
@@ -237,16 +241,23 @@ $prefix = get_option( 'hp_pdfi_invoice_prefix', '' );
 				</td>
 				<td class="quantity-column"><?php echo $item['quantity']; ?></td>
 				<td class="price-column">
-					<?php if ( ! $show_paid_price ) : ?>
-						<?php // Show original price when not showing paid price ?>
+					<?php if ( $item['has_discount'] ) : ?>
+						<?php echo $item['price']; ?>
+						<span class="strikethrough"><?php echo $item['original_price']; ?></span>
+						<?php if ( $item['discount_percent'] > 0 ) : ?>
+							<br><span class="discount-badge">(<?php echo round( $item['discount_percent'] ); ?>% off)</span>
+						<?php endif; ?>
+					<?php elseif ( ! $show_paid_price ) : ?>
 						<?php echo $item['original_price']; ?>
 					<?php else : ?>
 						<?php echo $item['price']; ?>
 					<?php endif; ?>
 				</td>
 				<td class="price-column">
-					<?php if ( ! $show_paid_price ) : ?>
-						<?php // Show original line total when not showing paid price ?>
+					<?php if ( $item['has_discount'] ) : ?>
+						<?php echo $item['total']; ?>
+						<span class="strikethrough"><?php echo $item['original_total']; ?></span>
+					<?php elseif ( ! $show_paid_price ) : ?>
 						<?php echo $item['original_total']; ?>
 					<?php else : ?>
 						<?php echo $item['total']; ?>

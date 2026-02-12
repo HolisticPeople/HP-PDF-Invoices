@@ -3,7 +3,7 @@
  * DOCX Maker - Generates Word documents for invoices
  * 
  * @package HP_PDF_Invoices
- * @version 1.2.18
+ * @version 1.2.19
  * @author Amnon Manneberg
  */
 namespace HP_PDFI;
@@ -320,24 +320,38 @@ class DOCXMaker {
 			$original_unit = $quantity > 0 ? $line_subtotal / $quantity : 0;
 			$paid_unit = $quantity > 0 ? $line_total / $quantity : 0;
 			$has_discount = $line_total < $line_subtotal;
+			$discount_percent = (float) $item->get_meta( '_eao_item_discount_percent', true );
 			
 			$table->addRow();
 			$table->addCell( 4000 )->addText( $this->sanitizeText( $item->get_name() ) );
 			$table->addCell( 1200 )->addText( $product ? $this->sanitizeText( $product->get_sku() ) : '' );
 			$table->addCell( 800 )->addText( $quantity, array(), array( 'alignment' => Jc::CENTER ) );
 			
-			// Price cell - show original price when not showing paid price
+			// Price cell - show both prices when item has a discount
 			$priceCell = $table->addCell( 1500 );
-			if ( ! $show_paid_price ) {
-				// Show original (pre-discount) price
+			if ( $has_discount ) {
+				// Show paid price, then original with strikethrough
+				$priceCell->addText( $this->formatMoney( $paid_unit, $currency ), array(), array( 'alignment' => Jc::END ) );
+				$priceCell->addText( $this->formatMoney( $original_unit, $currency ), array( 'strikethrough' => true, 'color' => '999999', 'size' => 8 ), array( 'alignment' => Jc::END ) );
+				if ( $discount_percent > 0 ) {
+					$priceCell->addText( '(' . round( $discount_percent ) . '% off)', array( 'color' => '4CAF50', 'size' => 8, 'italic' => true ), array( 'alignment' => Jc::END ) );
+				}
+			} elseif ( ! $show_paid_price ) {
 				$priceCell->addText( $this->formatMoney( $original_unit, $currency ), array(), array( 'alignment' => Jc::END ) );
 			} else {
 				$priceCell->addText( $this->formatMoney( $paid_unit, $currency ), array(), array( 'alignment' => Jc::END ) );
 			}
 			
-			// Line Total cell - show original or paid based on mode
-			$display_line_total = $show_paid_price ? $line_total : $line_subtotal;
-			$table->addCell( 1500 )->addText( $this->formatMoney( $display_line_total, $currency ), array(), array( 'alignment' => Jc::END ) );
+			// Line Total cell - show both when discounted
+			$totalCell = $table->addCell( 1500 );
+			if ( $has_discount ) {
+				$totalCell->addText( $this->formatMoney( $line_total, $currency ), array(), array( 'alignment' => Jc::END ) );
+				$totalCell->addText( $this->formatMoney( $line_subtotal, $currency ), array( 'strikethrough' => true, 'color' => '999999', 'size' => 8 ), array( 'alignment' => Jc::END ) );
+			} elseif ( $show_paid_price ) {
+				$totalCell->addText( $this->formatMoney( $line_total, $currency ), array(), array( 'alignment' => Jc::END ) );
+			} else {
+				$totalCell->addText( $this->formatMoney( $line_subtotal, $currency ), array(), array( 'alignment' => Jc::END ) );
+			}
 		}
 
 		$section->addTextBreak( 1 );

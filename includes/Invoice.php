@@ -3,7 +3,7 @@
  * Invoice Document Class
  * 
  * @package HP_PDF_Invoices
- * @version 1.2.18
+ * @version 1.2.19
  * @author Amnon Manneberg
  */
 namespace HP_PDFI;
@@ -162,19 +162,23 @@ class Invoice {
 			$original_unit_price = $quantity > 0 ? $line_subtotal / $quantity : 0;
 			$has_discount = $line_total < $line_subtotal;
 
+			// Get per-item discount percent from EAO meta (set by HP-Funnels for Special Offers)
+			$discount_percent = (float) $item->get_meta( '_eao_item_discount_percent', true );
+
 			$data[] = array(
-				'id'              => $item_id,
-				'name'            => $item->get_name(),
-				'sku'             => $product ? $product->get_sku() : '',
-				'quantity'        => $quantity,
+				'id'               => $item_id,
+				'name'             => $item->get_name(),
+				'sku'              => $product ? $product->get_sku() : '',
+				'quantity'         => $quantity,
 				// Unit prices
-				'price'           => \wc_price( $paid_unit_price, array( 'currency' => $this->order->get_currency() ) ),
-				'original_price'  => \wc_price( $original_unit_price, array( 'currency' => $this->order->get_currency() ) ),
+				'price'            => \wc_price( $paid_unit_price, array( 'currency' => $this->order->get_currency() ) ),
+				'original_price'   => \wc_price( $original_unit_price, array( 'currency' => $this->order->get_currency() ) ),
 				// Line totals
-				'total'           => \wc_price( $line_total, array( 'currency' => $this->order->get_currency() ) ),
-				'original_total'  => \wc_price( $line_subtotal, array( 'currency' => $this->order->get_currency() ) ),
-				'has_discount'    => $has_discount,
-				'image'           => $this->show_images ? $this->get_product_image( $product ) : '',
+				'total'            => \wc_price( $line_total, array( 'currency' => $this->order->get_currency() ) ),
+				'original_total'   => \wc_price( $line_subtotal, array( 'currency' => $this->order->get_currency() ) ),
+				'has_discount'     => $has_discount,
+				'discount_percent' => $discount_percent,
+				'image'            => $this->show_images ? $this->get_product_image( $product ) : '',
 			);
 		}
 
@@ -377,16 +381,22 @@ class Invoice {
 			
 			// Actual paid price per unit
 			$unit_price = $quantity > 0 ? $line_total / $quantity : 0;
+			$original_unit_price = $quantity > 0 ? $line_subtotal / $quantity : 0;
+
+			// Get per-item discount percent from EAO meta
+			$discount_percent = (float) $item->get_meta( '_eao_item_discount_percent', true );
 
 			$data[] = array(
-				'id'            => $item_id,
-				'name'          => $item->get_name(),
-				'sku'           => $product ? $product->get_sku() : '',
-				'quantity'      => $quantity,
-				'unit_price'    => round( $unit_price, 2 ),
-				'line_total'    => round( $line_total, 2 ),
-				'line_subtotal' => round( $line_subtotal, 2 ),
-				'has_discount'  => $line_total < $line_subtotal,
+				'id'                  => $item_id,
+				'name'                => $item->get_name(),
+				'sku'                 => $product ? $product->get_sku() : '',
+				'quantity'            => $quantity,
+				'unit_price'          => round( $unit_price, 2 ),
+				'original_unit_price' => round( $original_unit_price, 2 ),
+				'line_total'          => round( $line_total, 2 ),
+				'line_subtotal'       => round( $line_subtotal, 2 ),
+				'has_discount'        => $line_total < $line_subtotal,
+				'discount_percent'    => $discount_percent,
 			);
 		}
 

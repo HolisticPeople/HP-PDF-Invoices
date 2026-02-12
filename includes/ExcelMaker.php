@@ -119,8 +119,10 @@ class ExcelMaker {
 			'A1' => __( 'Product Name', 'hp-pdf-invoices' ),
 			'B1' => __( 'SKU', 'hp-pdf-invoices' ),
 			'C1' => __( 'Quantity', 'hp-pdf-invoices' ),
-			'D1' => __( 'Unit Price', 'hp-pdf-invoices' ),
-			'E1' => __( 'Total', 'hp-pdf-invoices' ),
+			'D1' => __( 'Original Price', 'hp-pdf-invoices' ),
+			'E1' => __( 'Unit Price', 'hp-pdf-invoices' ),
+			'F1' => __( 'Discount', 'hp-pdf-invoices' ),
+			'G1' => __( 'Total', 'hp-pdf-invoices' ),
 		);
 
 		foreach ( $headers as $cell => $value ) {
@@ -128,7 +130,7 @@ class ExcelMaker {
 		}
 
 		// Apply header styles
-		$sheet->getStyle( 'A1:E1' )->applyFromArray( $headerStyle );
+		$sheet->getStyle( 'A1:G1' )->applyFromArray( $headerStyle );
 
 		// Set column widths
 		$sheet->getColumnDimension( 'A' )->setWidth( 40 );
@@ -136,6 +138,8 @@ class ExcelMaker {
 		$sheet->getColumnDimension( 'C' )->setWidth( 10 );
 		$sheet->getColumnDimension( 'D' )->setWidth( 15 );
 		$sheet->getColumnDimension( 'E' )->setWidth( 15 );
+		$sheet->getColumnDimension( 'F' )->setWidth( 12 );
+		$sheet->getColumnDimension( 'G' )->setWidth( 15 );
 
 		// Add data rows
 		$items = $this->invoice->get_raw_order_items();
@@ -145,19 +149,39 @@ class ExcelMaker {
 			$sheet->setCellValue( 'A' . $row, $item['name'] );
 			$sheet->setCellValue( 'B' . $row, $item['sku'] );
 			$sheet->setCellValue( 'C' . $row, $item['quantity'] );
-			$sheet->setCellValue( 'D' . $row, $item['unit_price'] );
-			$sheet->setCellValue( 'E' . $row, $item['line_total'] );
+			$sheet->setCellValue( 'D' . $row, $item['original_unit_price'] );
+			$sheet->setCellValue( 'E' . $row, $item['unit_price'] );
+
+			// Discount column: show percent if present, otherwise calculate from price difference
+			if ( $item['discount_percent'] > 0 ) {
+				$sheet->setCellValue( 'F' . $row, $item['discount_percent'] / 100 );
+				$sheet->getStyle( 'F' . $row )->getNumberFormat()->setFormatCode( '0%' );
+			} elseif ( $item['has_discount'] && $item['original_unit_price'] > 0 ) {
+				$calc_pct = ( $item['original_unit_price'] - $item['unit_price'] ) / $item['original_unit_price'];
+				$sheet->setCellValue( 'F' . $row, round( $calc_pct, 4 ) );
+				$sheet->getStyle( 'F' . $row )->getNumberFormat()->setFormatCode( '0%' );
+			} else {
+				$sheet->setCellValue( 'F' . $row, '' );
+			}
+
+			$sheet->setCellValue( 'G' . $row, $item['line_total'] );
 
 			// Format currency columns
 			$sheet->getStyle( 'D' . $row )->getNumberFormat()->setFormatCode( '"$"#,##0.00' );
 			$sheet->getStyle( 'E' . $row )->getNumberFormat()->setFormatCode( '"$"#,##0.00' );
+			$sheet->getStyle( 'G' . $row )->getNumberFormat()->setFormatCode( '"$"#,##0.00' );
+
+			// Highlight discounted rows
+			if ( $item['has_discount'] ) {
+				$sheet->getStyle( 'D' . $row )->getFont()->setStrikethrough( true )->getColor()->setRGB( '999999' );
+			}
 
 			$row++;
 		}
 
 		// Apply data styles
 		if ( $row > 2 ) {
-			$sheet->getStyle( 'A2:E' . ( $row - 1 ) )->applyFromArray( $dataStyle );
+			$sheet->getStyle( 'A2:G' . ( $row - 1 ) )->applyFromArray( $dataStyle );
 		}
 
 		// Add totals section
@@ -165,13 +189,13 @@ class ExcelMaker {
 		$totals = $this->invoice->get_raw_totals();
 
 		foreach ( $totals as $total ) {
-			$sheet->setCellValue( 'D' . $row, $total['label'] );
-			$sheet->setCellValue( 'E' . $row, $total['raw_value'] );
-			$sheet->getStyle( 'D' . $row )->getFont()->setBold( true );
-			$sheet->getStyle( 'E' . $row )->getNumberFormat()->setFormatCode( '"$"#,##0.00' );
+			$sheet->setCellValue( 'F' . $row, $total['label'] );
+			$sheet->setCellValue( 'G' . $row, $total['raw_value'] );
+			$sheet->getStyle( 'F' . $row )->getFont()->setBold( true );
+			$sheet->getStyle( 'G' . $row )->getNumberFormat()->setFormatCode( '"$"#,##0.00' );
 			
 			if ( $total['key'] === 'total' ) {
-				$sheet->getStyle( 'D' . $row . ':E' . $row )->getFont()->setBold( true )->setSize( 12 );
+				$sheet->getStyle( 'F' . $row . ':G' . $row )->getFont()->setBold( true )->setSize( 12 );
 			}
 			$row++;
 		}
