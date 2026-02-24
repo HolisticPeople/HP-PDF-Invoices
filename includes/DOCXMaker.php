@@ -3,9 +3,9 @@
  * DOCX Maker - Generates Word documents for invoices
  * 
  * @package HP_PDF_Invoices
- * @version 1.2.23
+ * @version 1.2.24
  * @author Amnon Manneberg
- * Fix: use PhpWord output escaping; no manual & escape to avoid empty content.
+ * Fix: harden text sanitization fallback and decode nested entities; sanitize all money output.
  */
 namespace HP_PDFI;
 
@@ -143,12 +143,18 @@ class DOCXMaker {
 		// Convert to string if not already
 		$text = (string) $text;
 		
-		// Use WordPress functions for better entity handling
+		// Use WordPress functions for better entity handling.
 		$text = wp_strip_all_tags( $text );
 		
-		// Decode ALL HTML entities including numeric ones like &#36;
-		$text = wp_specialchars_decode( $text, ENT_QUOTES );
-		$text = html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		// Decode HTML entities (including nested encodings like &amp;#36;).
+		for ( $i = 0; $i < 3; $i++ ) {
+			$decoded = wp_specialchars_decode( $text, ENT_QUOTES );
+			$decoded = html_entity_decode( $decoded, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+			if ( $decoded === $text ) {
+				break;
+			}
+			$text = $decoded;
+		}
 		
 		// Handle numeric entities that might remain (decode to valid UTF-8; chr() would corrupt > 127)
 		$text = preg_replace_callback( '/&#(\d+);/', function( $matches ) {
@@ -166,13 +172,22 @@ class DOCXMaker {
 		$text = str_replace( array( "\xC2\xA0", '&nbsp;' ), ' ', $text );
 		
 		// Remove control characters except newlines and tabs
-		$text = preg_replace( '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $text );
+		$cleaned = preg_replace( '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $text );
+		if ( $cleaned !== null ) {
+			$text = $cleaned;
+		}
 		
 		// Remove XML 1.0 invalid codepoints (surrogates, U+FFFE, U+FFFF)
-		$text = preg_replace( '/[\x{D800}-\x{DFFF}\x{FFFE}\x{FFFF}]/u', '', $text );
+		$cleaned = preg_replace( '/[\x{D800}-\x{DFFF}\x{FFFE}\x{FFFF}]/u', '', $text );
+		if ( $cleaned !== null ) {
+			$text = $cleaned;
+		}
 		
 		// Normalize whitespace
-		$text = preg_replace( '/\s+/u', ' ', $text );
+		$cleaned = preg_replace( '/\s+/u', ' ', $text );
+		if ( $cleaned !== null ) {
+			$text = $cleaned;
+		}
 		
 		// Trim
 		$text = trim( $text );
@@ -182,8 +197,13 @@ class DOCXMaker {
 			$text = mb_convert_encoding( $text, 'UTF-8', 'UTF-8' );
 		}
 
-		// Do not escape & here: we enable PhpWordSettings::setOutputEscapingEnabled(true) so PhpWord escapes when writing XML.
-		// Pre-escaping caused PhpWord to strip content (empty addresses/product names).
+		// Fallback guard: never return empty when source had visible content.
+		if ( $text === '' ) {
+			$fallback = trim( wp_strip_all_tags( (string) $raw ) );
+			if ( $fallback !== '' ) {
+				$text = $fallback;
+			}
+		}
 
 		if ( $this->debug_docx && $label !== '' ) {
 			$raw_str = is_scalar( $raw ) ? (string) $raw : '';
@@ -371,26 +391,26 @@ class DOCXMaker {
 			$priceCell = $table->addCell( 1500 );
 			if ( $has_discount ) {
 				// Show paid price, then original with strikethrough
-				$priceCell->addText( $this->formatMoney( $paid_unit, $currency ), array(), array( 'alignment' => Jc::END ) );
-				$priceCell->addText( $this->formatMoney( $original_unit, $currency ), array( 'strikethrough' => true, 'color' => '999999', 'size' => 8 ), array( 'alignment' => Jc::END ) );
+				$priceCell->addText( $this->sanitizeText( $this->formatMoney( $paid_unit, $currency ), 'item_paid_unit' ), array(), array( 'alignment' => Jc::END ) );
+				$priceCell->addText( $this->sanitizeText( $this->formatMoney( $original_unit, $currency ), 'item_original_unit' ), array( 'strikethrough' => true, 'color' => '999999', 'size' => 8 ), array( 'alignment' => Jc::END ) );
 				if ( $discount_percent > 0 ) {
 					$priceCell->addText( '(' . round( $discount_percent ) . '% off)', array( 'color' => '4CAF50', 'size' => 8, 'italic' => true ), array( 'alignment' => Jc::END ) );
 				}
 			} elseif ( ! $show_paid_price ) {
-				$priceCell->addText( $this->formatMoney( $original_unit, $currency ), array(), array( 'alignment' => Jc::END ) );
+				$priceCell->addText( $this->sanitizeText( $this->formatMoney( $original_unit, $currency ), 'item_original_unit' ), array(), array( 'alignment' => Jc::END ) );
 			} else {
-				$priceCell->addText( $this->formatMoney( $paid_unit, $currency ), array(), array( 'alignment' => Jc::END ) );
+				$priceCell->addText( $this->sanitizeText( $this->formatMoney( $paid_unit, $currency ), 'item_paid_unit' ), array(), array( 'alignment' => Jc::END ) );
 			}
 			
 			// Line Total cell - show both when discounted
 			$totalCell = $table->addCell( 1500 );
 			if ( $has_discount ) {
-				$totalCell->addText( $this->formatMoney( $line_total, $currency ), array(), array( 'alignment' => Jc::END ) );
-				$totalCell->addText( $this->formatMoney( $line_subtotal, $currency ), array( 'strikethrough' => true, 'color' => '999999', 'size' => 8 ), array( 'alignment' => Jc::END ) );
+				$totalCell->addText( $this->sanitizeText( $this->formatMoney( $line_total, $currency ), 'item_line_total' ), array(), array( 'alignment' => Jc::END ) );
+				$totalCell->addText( $this->sanitizeText( $this->formatMoney( $line_subtotal, $currency ), 'item_line_subtotal' ), array( 'strikethrough' => true, 'color' => '999999', 'size' => 8 ), array( 'alignment' => Jc::END ) );
 			} elseif ( $show_paid_price ) {
-				$totalCell->addText( $this->formatMoney( $line_total, $currency ), array(), array( 'alignment' => Jc::END ) );
+				$totalCell->addText( $this->sanitizeText( $this->formatMoney( $line_total, $currency ), 'item_line_total' ), array(), array( 'alignment' => Jc::END ) );
 			} else {
-				$totalCell->addText( $this->formatMoney( $line_subtotal, $currency ), array(), array( 'alignment' => Jc::END ) );
+				$totalCell->addText( $this->sanitizeText( $this->formatMoney( $line_subtotal, $currency ), 'item_line_subtotal' ), array(), array( 'alignment' => Jc::END ) );
 			}
 		}
 
