@@ -5,6 +5,7 @@
  * @package HP_PDF_Invoices
  * @version 1.2.19
  * @author Amnon Manneberg
+ * Fix: decode numeric HTML entities to UTF-8 (mb_chr) to prevent DOCX corruption; UTF-8 validity safeguard.
  */
 namespace HP_PDFI;
 
@@ -135,9 +136,16 @@ class DOCXMaker {
 		$text = wp_specialchars_decode( $text, ENT_QUOTES );
 		$text = html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
 		
-		// Handle numeric entities that might remain
+		// Handle numeric entities that might remain (decode to valid UTF-8; chr() would corrupt > 127)
 		$text = preg_replace_callback( '/&#(\d+);/', function( $matches ) {
-			return chr( intval( $matches[1] ) );
+			$codepoint = (int) $matches[1];
+			if ( $codepoint < 0 || $codepoint > 0x10FFFF ) {
+				return '';
+			}
+			if ( $codepoint < 128 ) {
+				return chr( $codepoint );
+			}
+			return \mb_chr( $codepoint, 'UTF-8' );
 		}, $text );
 		
 		// Replace non-breaking spaces with regular spaces
@@ -151,6 +159,11 @@ class DOCXMaker {
 		
 		// Trim
 		$text = trim( $text );
+
+		// Ensure valid UTF-8 for Word/XML (strip any invalid sequences)
+		if ( ! mb_check_encoding( $text, 'UTF-8' ) ) {
+			$text = mb_convert_encoding( $text, 'UTF-8', 'UTF-8' );
+		}
 		
 		return $text;
 	}
