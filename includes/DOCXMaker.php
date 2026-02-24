@@ -3,9 +3,9 @@
  * DOCX Maker - Generates Word documents for invoices
  * 
  * @package HP_PDF_Invoices
- * @version 1.2.21
+ * @version 1.2.22
  * @author Amnon Manneberg
- * Fix: escape & < > for XML (PhpWord does not escape ampersands in text - breaks DOCX).
+ * Fix: escape only & for XML; do not escape < > (PhpWord strips content containing &lt; &gt;).
  */
 namespace HP_PDFI;
 
@@ -178,8 +178,9 @@ class DOCXMaker {
 			$text = mb_convert_encoding( $text, 'UTF-8', 'UTF-8' );
 		}
 
-		// Escape XML special chars so PhpWord output is valid (PhpWord does not escape & in text)
-		$text = str_replace( array( '&', '<', '>' ), array( '&amp;', '&lt;', '&gt;' ), $text );
+		// Escape only ampersand for valid XML (PhpWord does not escape & in text).
+		// Do NOT escape < and > here: PhpWord treats &lt;/&gt; as XML and strips content, leaving empty text.
+		$text = str_replace( '&', '&amp;', $text );
 
 		if ( $this->debug_docx && $label !== '' ) {
 			$raw_str = is_scalar( $raw ) ? (string) $raw : '';
