@@ -3,9 +3,9 @@
  * DOCX Maker - Generates Word documents for invoices
  * 
  * @package HP_PDF_Invoices
- * @version 1.2.19
+ * @version 1.2.21
  * @author Amnon Manneberg
- * Fix: decode numeric HTML entities to UTF-8 (mb_chr) to prevent DOCX corruption; UTF-8 validity safeguard.
+ * Fix: escape & < > for XML (PhpWord does not escape ampersands in text - breaks DOCX).
  */
 namespace HP_PDFI;
 
@@ -37,6 +37,9 @@ class DOCXMaker {
 	 */
 	protected $phpWord;
 
+	/** @var bool Whether to log every text segment for debugging order-specific corruption */
+	protected $debug_docx = false;
+
 	/**
 	 * Constructor
 	 *
@@ -66,7 +69,12 @@ class DOCXMaker {
 	 */
 	public function output() {
 		try {
-			error_log( 'HP-PDF-Invoices DOCX: Starting generation for order ' . $this->order->get_id() );
+			// Debug: add ?hp_pdfi_docx_debug=1 or ?hp_pdfi_docx_debug=128627 to the DOCX export URL
+			$this->debug_docx = isset( $_GET['hp_pdfi_docx_debug'] ) && (
+				$_GET['hp_pdfi_docx_debug'] === '1' || (int) $_GET['hp_pdfi_docx_debug'] === (int) $this->order->get_id()
+			);
+
+			error_log( 'HP-PDF-Invoices DOCX: Starting generation for order ' . $this->order->get_id() . ( $this->debug_docx ? ' (debug on)' : '' ) );
 			
 			$section = $this->phpWord->addSection();
 
@@ -116,13 +124,15 @@ class DOCXMaker {
 
 	/**
 	 * Sanitize text for DOCX output
-	 * Removes HTML entities and special characters that could break the document
+	 * Removes HTML entities and characters invalid in XML 1.0 / Word OOXML
 	 *
 	 * @param string $text
+	 * @param string $label Optional label for debug logging (when hp_pdfi_docx_debug=1).
 	 * @return string
 	 */
-	protected function sanitizeText( $text ) {
-		if ( empty( $text ) ) {
+	protected function sanitizeText( $text, $label = '' ) {
+		$raw = $text;
+		if ( $text === null || $text === '' ) {
 			return '';
 		}
 		
@@ -152,10 +162,13 @@ class DOCXMaker {
 		$text = str_replace( array( "\xC2\xA0", '&nbsp;' ), ' ', $text );
 		
 		// Remove control characters except newlines and tabs
-		$text = preg_replace( '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $text );
+		$text = preg_replace( '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $text );
+		
+		// Remove XML 1.0 invalid codepoints (surrogates, U+FFFE, U+FFFF)
+		$text = preg_replace( '/[\x{D800}-\x{DFFF}\x{FFFE}\x{FFFF}]/u', '', $text );
 		
 		// Normalize whitespace
-		$text = preg_replace( '/\s+/', ' ', $text );
+		$text = preg_replace( '/\s+/u', ' ', $text );
 		
 		// Trim
 		$text = trim( $text );
@@ -163,6 +176,16 @@ class DOCXMaker {
 		// Ensure valid UTF-8 for Word/XML (strip any invalid sequences)
 		if ( ! mb_check_encoding( $text, 'UTF-8' ) ) {
 			$text = mb_convert_encoding( $text, 'UTF-8', 'UTF-8' );
+		}
+
+		// Escape XML special chars so PhpWord output is valid (PhpWord does not escape & in text)
+		$text = str_replace( array( '&', '<', '>' ), array( '&amp;', '&lt;', '&gt;' ), $text );
+
+		if ( $this->debug_docx && $label !== '' ) {
+			$raw_str = is_scalar( $raw ) ? (string) $raw : '';
+			$raw_repr = mb_check_encoding( $raw_str, 'UTF-8' ) ? $raw_str : '[invalid UTF-8]';
+			$hex = bin2hex( $raw_repr );
+			error_log( 'HP-PDF-Invoices DOCX debug: ' . $label . ' | raw=' . json_encode( $raw_repr ) . ' | sanitized=' . json_encode( $text ) . ( $hex !== '' ? ' | hex=' . substr( $hex, 0, 200 ) : '' ) );
 		}
 		
 		return $text;
@@ -222,11 +245,11 @@ class DOCXMaker {
 		// Shop info cell - tight line spacing
 		$tightPara = array( 'alignment' => Jc::END, 'spaceAfter' => 0, 'spaceBefore' => 0 );
 		$cell2 = $table->addCell( 4500 );
-		$cell2->addText( $this->sanitizeText( $shop_name ), array( 'bold' => true ), $tightPara );
+		$cell2->addText( $this->sanitizeText( $shop_name, 'header_shop_name' ), array( 'bold' => true ), $tightPara );
 		
 		$address_lines = explode( "\n", $shop_address );
-		foreach ( $address_lines as $line ) {
-			$cell2->addText( $this->sanitizeText( trim( $line ) ), array(), $tightPara );
+		foreach ( $address_lines as $i => $line ) {
+			$cell2->addText( $this->sanitizeText( trim( $line ), 'header_address_' . $i ), array(), $tightPara );
 		}
 	}
 
@@ -268,18 +291,18 @@ class DOCXMaker {
 		$cell1 = $table->addCell( 3000 );
 		$cell1->addText( __( 'Billing Address', 'hp-pdf-invoices' ), array( 'bold' => true, 'size' => 11 ), $tightBold );
 		$billing_lines = explode( '<br/>', $order->get_formatted_billing_address() );
-		foreach ( $billing_lines as $line ) {
-			$cell1->addText( $this->sanitizeText( $line ), array(), $tight );
+		foreach ( $billing_lines as $i => $line ) {
+			$cell1->addText( $this->sanitizeText( $line, 'billing_line_' . $i ), array(), $tight );
 		}
-		$cell1->addText( $this->sanitizeText( $order->get_billing_email() ), array(), $tight );
-		$cell1->addText( $this->sanitizeText( $order->get_billing_phone() ), array(), $tight );
+		$cell1->addText( $this->sanitizeText( $order->get_billing_email(), 'billing_email' ), array(), $tight );
+		$cell1->addText( $this->sanitizeText( $order->get_billing_phone(), 'billing_phone' ), array(), $tight );
 
 		// Shipping Address
 		$cell2 = $table->addCell( 3000 );
 		$cell2->addText( __( 'Shipping Address', 'hp-pdf-invoices' ), array( 'bold' => true, 'size' => 11 ), $tightBold );
 		$shipping_lines = explode( '<br/>', $order->get_formatted_shipping_address() );
-		foreach ( $shipping_lines as $line ) {
-			$cell2->addText( $this->sanitizeText( $line ), array(), $tight );
+		foreach ( $shipping_lines as $i => $line ) {
+			$cell2->addText( $this->sanitizeText( $line, 'shipping_line_' . $i ), array(), $tight );
 		}
 
 		// Order Info
@@ -288,7 +311,7 @@ class DOCXMaker {
 		$cell3->addText( __( 'Invoice Date:', 'hp-pdf-invoices' ) . ' ' . date_i18n( get_option( 'date_format' ) ), array(), $tight );
 		$cell3->addText( __( 'Order Number:', 'hp-pdf-invoices' ) . ' ' . $order->get_order_number(), array(), $tight );
 		$cell3->addText( __( 'Order Date:', 'hp-pdf-invoices' ) . ' ' . date_i18n( get_option( 'date_format' ), strtotime( $order->get_date_created() ) ), array(), $tight );
-		$cell3->addText( __( 'Payment Method:', 'hp-pdf-invoices' ) . ' ' . $this->sanitizeText( $order->get_payment_method_title() ), array(), $tight );
+		$cell3->addText( __( 'Payment Method:', 'hp-pdf-invoices' ) . ' ' . $this->sanitizeText( $order->get_payment_method_title(), 'payment_method' ), array(), $tight );
 	}
 
 	/**
@@ -336,8 +359,8 @@ class DOCXMaker {
 			$discount_percent = (float) $item->get_meta( '_eao_item_discount_percent', true );
 			
 			$table->addRow();
-			$table->addCell( 4000 )->addText( $this->sanitizeText( $item->get_name() ) );
-			$table->addCell( 1200 )->addText( $product ? $this->sanitizeText( $product->get_sku() ) : '' );
+			$table->addCell( 4000 )->addText( $this->sanitizeText( $item->get_name(), 'product_name' ) );
+			$table->addCell( 1200 )->addText( $product ? $this->sanitizeText( $product->get_sku(), 'product_sku' ) : '' );
 			$table->addCell( 800 )->addText( $quantity, array(), array( 'alignment' => Jc::CENTER ) );
 			
 			// Price cell - show both prices when item has a discount
@@ -432,7 +455,7 @@ class DOCXMaker {
 		$grand_total = $subtotal - $total_discount + $shipping + $tax;
 		$rows[] = array( 'label' => __( 'Total', 'hp-pdf-invoices' ), 'value' => $this->formatMoney( $grand_total, $currency ), 'bold' => true );
 
-		// Add rows to table
+		// Add rows to table (sanitize labels/values for XML safety, e.g. discount labels, currency symbols)
 		foreach ( $rows as $row ) {
 			$table->addRow();
 			$table->addCell( 5000 ); // Empty spacer cell
@@ -440,8 +463,8 @@ class DOCXMaker {
 			$labelStyle = isset( $row['italic'] ) ? array( 'italic' => true ) : array();
 			$valueStyle = isset( $row['bold'] ) ? array( 'bold' => true, 'size' => 12 ) : ( isset( $row['italic'] ) ? array( 'italic' => true ) : array( 'bold' => true ) );
 			
-			$table->addCell( 2500 )->addText( $row['label'], $labelStyle, array( 'alignment' => Jc::END ) );
-			$table->addCell( 1500 )->addText( $row['value'], $valueStyle, array( 'alignment' => Jc::END ) );
+			$table->addCell( 2500 )->addText( $this->sanitizeText( $row['label'], 'totals_label' ), $labelStyle, array( 'alignment' => Jc::END ) );
+			$table->addCell( 1500 )->addText( $this->sanitizeText( $row['value'], 'totals_value' ), $valueStyle, array( 'alignment' => Jc::END ) );
 		}
 
 		$section->addTextBreak( 1 );
@@ -474,7 +497,7 @@ class DOCXMaker {
 			__( 'Customer Notes', 'hp-pdf-invoices' ),
 			array( 'bold' => true, 'size' => 11 )
 		);
-		$section->addText( $this->sanitizeText( $notes ) );
+		$section->addText( $this->sanitizeText( $notes, 'customer_note' ) );
 	}
 
 	/**
