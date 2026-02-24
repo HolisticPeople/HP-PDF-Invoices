@@ -3,9 +3,9 @@
  * DOCX Maker - Generates Word documents for invoices
  * 
  * @package HP_PDF_Invoices
- * @version 1.2.24
+ * @version 1.2.25
  * @author Amnon Manneberg
- * Fix: harden text sanitization fallback and decode nested entities; sanitize all money output.
+ * Fix: add product image column to DOCX products table when show_images is enabled.
  */
 namespace HP_PDFI;
 
@@ -345,8 +345,13 @@ class DOCXMaker {
 	 */
 	protected function addProductsTable( $section ) {
 		$printer_friendly = $this->invoice->printer_friendly;
-		$show_paid_price = $this->invoice->show_paid_price;
-		$currency = $this->order->get_currency();
+		$show_paid_price  = $this->invoice->show_paid_price;
+		$show_images      = $this->invoice->show_images;
+		$currency         = $this->order->get_currency();
+
+		// Column widths – image column is added only when show_images is on
+		$img_col_width     = 900;  // ~16mm
+		$product_col_width = $show_images ? 3100 : 4000;
 
 		$tableStyle = array(
 			'borderSize'  => 6,
@@ -364,7 +369,10 @@ class DOCXMaker {
 
 		// Header row
 		$table->addRow();
-		$table->addCell( 4000, $headerStyle )->addText( __( 'Product', 'hp-pdf-invoices' ), $boldFont );
+		if ( $show_images ) {
+			$table->addCell( $img_col_width, $headerStyle )->addText( '' );
+		}
+		$table->addCell( $product_col_width, $headerStyle )->addText( __( 'Product', 'hp-pdf-invoices' ), $boldFont );
 		$table->addCell( 1200, $headerStyle )->addText( __( 'SKU', 'hp-pdf-invoices' ), $boldFont );
 		$table->addCell( 800, $headerStyle )->addText( __( 'Qty', 'hp-pdf-invoices' ), $boldFont, array( 'alignment' => Jc::CENTER ) );
 		$table->addCell( 1500, $headerStyle )->addText( __( 'Price', 'hp-pdf-invoices' ), $boldFont, array( 'alignment' => Jc::END ) );
@@ -372,18 +380,47 @@ class DOCXMaker {
 
 		// Data rows
 		foreach ( $this->order->get_items() as $item ) {
-			$product = $item->get_product();
-			$quantity = $item->get_quantity();
-			$line_subtotal = (float) $item->get_subtotal(); // Original total
-			$line_total = (float) $item->get_total(); // Paid total (after discounts)
+			$product      = $item->get_product();
+			$quantity     = $item->get_quantity();
+			$line_subtotal = (float) $item->get_subtotal();
+			$line_total    = (float) $item->get_total();
 			
-			$original_unit = $quantity > 0 ? $line_subtotal / $quantity : 0;
-			$paid_unit = $quantity > 0 ? $line_total / $quantity : 0;
-			$has_discount = $line_total < $line_subtotal;
+			$original_unit   = $quantity > 0 ? $line_subtotal / $quantity : 0;
+			$paid_unit       = $quantity > 0 ? $line_total / $quantity : 0;
+			$has_discount    = $line_total < $line_subtotal;
 			$discount_percent = (float) $item->get_meta( '_eao_item_discount_percent', true );
 			
 			$table->addRow();
-			$table->addCell( 4000 )->addText( $this->sanitizeText( $item->get_name(), 'product_name' ) );
+
+			// Image cell
+			if ( $show_images ) {
+				$img_cell  = $table->addCell( $img_col_width, array( 'valign' => 'center' ) );
+				$img_path  = $this->getProductImagePath( $product );
+				if ( $img_path ) {
+					// Keep image square-ish at ~40pt max, preserve aspect ratio
+					$info = @getimagesize( $img_path );
+					if ( $info && $info[0] > 0 ) {
+						$max = 40;
+						$ratio  = $info[1] / $info[0];
+						$width  = $max;
+						$height = min( $max, round( $max * $ratio ) );
+					} else {
+						$width = 40; $height = 40;
+					}
+					try {
+						$img_cell->addImage( $img_path, array(
+							'width'            => $width,
+							'height'           => $height,
+							'wrappingStyle'    => 'inline',
+						) );
+					} catch ( \Exception $e ) {
+						error_log( 'HP-PDF-Invoices DOCX: image failed for product ' . ( $product ? $product->get_id() : 'unknown' ) . ' – ' . $e->getMessage() );
+						$img_cell->addText( '' );
+					}
+				}
+			}
+
+			$table->addCell( $product_col_width )->addText( $this->sanitizeText( $item->get_name(), 'product_name' ) );
 			$table->addCell( 1200 )->addText( $product ? $this->sanitizeText( $product->get_sku(), 'product_sku' ) : '' );
 			$table->addCell( 800 )->addText( $quantity, array(), array( 'alignment' => Jc::CENTER ) );
 			
@@ -494,6 +531,28 @@ class DOCXMaker {
 		$section->addTextBreak( 1 );
 	}
 	
+	/**
+	 * Get local filesystem path for a product's thumbnail image.
+	 * Returns empty string if no image exists or file is not found.
+	 *
+	 * @param \WC_Product|null $product
+	 * @return string Absolute path or ''
+	 */
+	protected function getProductImagePath( $product ) {
+		if ( ! $product ) {
+			return '';
+		}
+		$image_id = $product->get_image_id();
+		if ( ! $image_id ) {
+			return '';
+		}
+		$path = get_attached_file( $image_id );
+		if ( ! $path || ! file_exists( $path ) ) {
+			return '';
+		}
+		return $path;
+	}
+
 	/**
 	 * Format money without HTML
 	 *
