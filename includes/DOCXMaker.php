@@ -3,14 +3,15 @@
  * DOCX Maker - Generates Word documents for invoices
  * 
  * @package HP_PDF_Invoices
- * @version 1.2.22
+ * @version 1.2.23
  * @author Amnon Manneberg
- * Fix: escape only & for XML; do not escape < > (PhpWord strips content containing &lt; &gt;).
+ * Fix: use PhpWord output escaping; no manual & escape to avoid empty content.
  */
 namespace HP_PDFI;
 
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\IOFactory;
+use PhpOffice\PhpWord\Settings as PhpWordSettings;
 use PhpOffice\PhpWord\SimpleType\Jc;
 use PhpOffice\PhpWord\Style\Font;
 
@@ -75,7 +76,10 @@ class DOCXMaker {
 			);
 
 			error_log( 'HP-PDF-Invoices DOCX: Starting generation for order ' . $this->order->get_id() . ( $this->debug_docx ? ' (debug on)' : '' ) );
-			
+
+			// Let PhpWord escape & < > in XML; we pass plain text so content is not stripped
+			PhpWordSettings::setOutputEscapingEnabled( true );
+
 			$section = $this->phpWord->addSection();
 
 			error_log( 'HP-PDF-Invoices DOCX: Adding header' );
@@ -178,9 +182,8 @@ class DOCXMaker {
 			$text = mb_convert_encoding( $text, 'UTF-8', 'UTF-8' );
 		}
 
-		// Escape only ampersand for valid XML (PhpWord does not escape & in text).
-		// Do NOT escape < and > here: PhpWord treats &lt;/&gt; as XML and strips content, leaving empty text.
-		$text = str_replace( '&', '&amp;', $text );
+		// Do not escape & here: we enable PhpWordSettings::setOutputEscapingEnabled(true) so PhpWord escapes when writing XML.
+		// Pre-escaping caused PhpWord to strip content (empty addresses/product names).
 
 		if ( $this->debug_docx && $label !== '' ) {
 			$raw_str = is_scalar( $raw ) ? (string) $raw : '';
