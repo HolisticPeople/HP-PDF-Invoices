@@ -511,10 +511,17 @@ class DOCXMaker {
 			$rows[] = array( 'label' => __( 'Tax', 'hp-pdf-invoices' ), 'value' => $this->formatMoney( $tax, $currency ) );
 		}
 		
-		// Calculate Grand Total the same way EAO does:
-		// Grand Total = Subtotal - Product Discount - Points Discount + Shipping + Tax
+		// Total paid = subtotal - discounts + shipping + tax.
 		$grand_total = $subtotal - $total_discount + $shipping + $tax;
-		$rows[] = array( 'label' => __( 'Total', 'hp-pdf-invoices' ), 'value' => $this->formatMoney( $grand_total, $currency ), 'bold' => true );
+		$rows[] = array( 'label' => __( 'Total Paid', 'hp-pdf-invoices' ), 'value' => $this->formatMoney( $grand_total, $currency ), 'bold' => true );
+
+		$store_credit = $this->invoice->get_store_credit_applied();
+		if ( $store_credit > 0 ) {
+			$rows[] = array(
+				'label' => __( 'Paid with Store Credit', 'hp-pdf-invoices' ),
+				'value' => $this->formatMoney( $store_credit, $currency ),
+			);
+		}
 
 		// Add rows to table (sanitize labels/values for XML safety, e.g. discount labels, currency symbols)
 		foreach ( $rows as $row ) {
@@ -617,4 +624,3 @@ class DOCXMaker {
 }
 
 endif;
-

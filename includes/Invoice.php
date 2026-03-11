@@ -210,6 +210,92 @@ class Invoice {
 	}
 
 	/**
+	 * Get the applied store-credit amount for the order.
+	 *
+	 * @return float
+	 */
+	public function get_store_credit_applied() {
+		if ( class_exists( '\HP_Core\Services\OrderPaymentDisplay' ) ) {
+			return \HP_Core\Services\OrderPaymentDisplay::get_store_credit_applied( $this->order );
+		}
+
+		$split = $this->order->get_meta( '_hp_wallet_payment_split', true );
+		if ( is_array( $split ) && ! empty( $split['store_credit'] ) ) {
+			return round( max( 0, (float) $split['store_credit'] ), wc_get_price_decimals() );
+		}
+
+		$credit = (float) ( $this->order->get_meta( '_hp_wallet_credit_applied' ) ?: $this->order->get_meta( '_hp_rw_store_credit_applied' ) );
+		if ( $credit > 0 ) {
+			return round( $credit, wc_get_price_decimals() );
+		}
+
+		$total = 0.0;
+		foreach ( $this->order->get_fees() as $fee ) {
+			if ( $this->is_store_credit_fee( $fee ) ) {
+				$total += abs( (float) $fee->get_total() );
+			}
+		}
+
+		return round( $total, wc_get_price_decimals() );
+	}
+
+	/**
+	 * Get the redeemed points count stored on the order.
+	 *
+	 * @return int
+	 */
+	public function get_points_redeemed_count() {
+		if ( class_exists( '\HP_Core\Services\OrderPaymentDisplay' ) ) {
+			return \HP_Core\Services\OrderPaymentDisplay::get_points_redeemed( $this->order );
+		}
+
+		$split = $this->order->get_meta( '_hp_wallet_payment_split', true );
+		if ( is_array( $split ) && ! empty( $split['points_redeemed'] ) ) {
+			return (int) $split['points_redeemed'];
+		}
+
+		$points = (int) ( $this->order->get_meta( '_hp_wallet_points_redeemed' ) ?: $this->order->get_meta( '_hp_rw_points_redeemed' ) );
+		if ( $points > 0 ) {
+			return $points;
+		}
+
+		return (int) $this->order->get_meta( '_ywpar_coupon_points' );
+	}
+
+	/**
+	 * Get the monetary points discount stored on the order.
+	 *
+	 * @return float
+	 */
+	public function get_points_discount_amount() {
+		if ( class_exists( '\HP_Core\Services\OrderPaymentDisplay' ) ) {
+			return \HP_Core\Services\OrderPaymentDisplay::get_points_discount( $this->order );
+		}
+
+		$split = $this->order->get_meta( '_hp_wallet_payment_split', true );
+		if ( is_array( $split ) && ! empty( $split['points_discount'] ) ) {
+			return round( max( 0, (float) $split['points_discount'] ), wc_get_price_decimals() );
+		}
+
+		$points_amount = (float) (
+			$this->order->get_meta( '_hp_wallet_points_discount' )
+			?: $this->order->get_meta( '_hp_rw_points_discount' )
+			?: $this->order->get_meta( '_ywpar_coupon_amount' )
+		);
+		if ( $points_amount > 0 ) {
+			return round( $points_amount, wc_get_price_decimals() );
+		}
+
+		foreach ( $this->order->get_fees() as $fee ) {
+			if ( $this->is_points_fee( $fee ) ) {
+				return round( abs( (float) $fee->get_total() ), wc_get_price_decimals() );
+			}
+		}
+
+		return 0.0;
+	}
+
+	/**
 	 * Get discount breakdown for the order
 	 * Fetches Product Discounts from EAO meta and Points Discounts from YITH meta
 	 * No complex calculations - just read stored values
@@ -249,17 +335,17 @@ class Invoice {
 			}
 		}
 		
-		// Also add any negative fees (like "Offer Savings")
+		// Also add negative discount fees, but never wallet-payment fees.
 		foreach ( $this->order->get_fees() as $fee ) {
 			$fee_total = (float) $fee->get_total();
-			if ( $fee_total < 0 ) {
+			if ( $fee_total < 0 && ! $this->is_store_credit_fee( $fee ) && ! $this->is_points_fee( $fee ) ) {
 				$product_discount += abs( $fee_total );
 			}
 		}
 		
-		// 2. Get Points Discount from YITH meta (stored values, no calculation)
-		$points_count = (int) $this->order->get_meta( '_ywpar_coupon_points' );
-		$points_amount = (float) $this->order->get_meta( '_ywpar_coupon_amount' );
+		// 2. Get Points Discount from stored order metadata (HP-Wallet first, YITH legacy fallback).
+		$points_count = $this->get_points_redeemed_count();
+		$points_amount = $this->get_points_discount_amount();
 		
 		// Fallback: check for YITH discount coupons if meta not found
 		if ( $points_amount < 0.01 ) {
@@ -351,14 +437,21 @@ class Invoice {
 			$tax_total += (float) $tax->amount;
 		}
 
-		// 5. Calculate Grand Total the same way EAO does:
-		// Grand Total = Subtotal - Product Discount - Points Discount + Shipping + Tax
+		// 5. Total paid = subtotal - discounts + shipping + tax.
 		$grand_total = $items_subtotal - $total_discount + $shipping_total + $tax_total;
 		
 		$totals['total'] = array(
-			'label' => __( 'Total', 'hp-pdf-invoices' ),
+			'label' => __( 'Total Paid', 'hp-pdf-invoices' ),
 			'value' => \wc_price( $grand_total, array( 'currency' => $currency ) ),
 		);
+
+		$store_credit = $this->get_store_credit_applied();
+		if ( $store_credit > 0 ) {
+			$totals['store_credit_payment'] = array(
+				'label' => __( 'Paid with Store Credit', 'hp-pdf-invoices' ),
+				'value' => \wc_price( $store_credit, array( 'currency' => $currency ) ),
+			);
+		}
 
 		return $totals;
 	}
@@ -423,13 +516,12 @@ class Invoice {
 			'raw_value' => round( $subtotal, 2 ),
 		);
 
-		// Discount
-		$discount = (float) $this->order->get_total_discount();
-		if ( $discount > 0 ) {
+		// Discounts - use the same classified breakdown as the HTML/DOCX views.
+		foreach ( $this->get_discount_summary() as $index => $discount ) {
 			$totals[] = array(
-				'key'       => 'discount',
-				'label'     => __( 'Discount', 'hp-pdf-invoices' ),
-				'raw_value' => round( -$discount, 2 ),
+				'key'       => 'discount_' . $index,
+				'label'     => rtrim( $discount['label'], ':' ),
+				'raw_value' => round( -1 * (float) $discount['raw'], 2 ),
 			);
 		}
 
@@ -452,16 +544,64 @@ class Invoice {
 			);
 		}
 
-		// Total
+		// Total paid = order total + store credit applied.
+		$total_paid = 0.0;
+		foreach ( $totals as $row ) {
+			$total_paid += (float) $row['raw_value'];
+		}
 		$totals[] = array(
 			'key'       => 'total',
-			'label'     => __( 'Total', 'hp-pdf-invoices' ),
-			'raw_value' => round( (float) $this->order->get_total(), 2 ),
+			'label'     => __( 'Total Paid', 'hp-pdf-invoices' ),
+			'raw_value' => round( $total_paid, 2 ),
 		);
 
+		$store_credit = $this->get_store_credit_applied();
+		if ( $store_credit > 0 ) {
+			$totals[] = array(
+				'key'       => 'store_credit_payment',
+				'label'     => __( 'Paid with Store Credit', 'hp-pdf-invoices' ),
+				'raw_value' => round( $store_credit, 2 ),
+			);
+		}
+
 		return $totals;
+	}
+
+	/**
+	 * Check whether a fee item represents store credit.
+	 *
+	 * @param mixed $fee Fee item.
+	 * @return bool
+	 */
+	private function is_store_credit_fee( $fee ) {
+		if ( class_exists( '\HP_Core\Services\OrderPaymentDisplay' ) ) {
+			return \HP_Core\Services\OrderPaymentDisplay::is_store_credit_fee( $fee );
+		}
+
+		return $fee instanceof \WC_Order_Item_Fee
+			&& (
+				(string) $fee->get_meta( '_hp_wallet_fee_type' ) === 'store_credit'
+				|| strpos( strtolower( (string) $fee->get_name() ), 'store credit' ) !== false
+			);
+	}
+
+	/**
+	 * Check whether a fee item represents redeemed points.
+	 *
+	 * @param mixed $fee Fee item.
+	 * @return bool
+	 */
+	private function is_points_fee( $fee ) {
+		if ( class_exists( '\HP_Core\Services\OrderPaymentDisplay' ) ) {
+			return \HP_Core\Services\OrderPaymentDisplay::is_points_fee( $fee );
+		}
+
+		return $fee instanceof \WC_Order_Item_Fee
+			&& (
+				(string) $fee->get_meta( '_hp_wallet_fee_type' ) === 'points'
+				|| strpos( strtolower( (string) $fee->get_name() ), 'points' ) !== false
+			);
 	}
 }
 
 endif;
-
