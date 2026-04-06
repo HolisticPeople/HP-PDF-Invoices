@@ -246,7 +246,12 @@ class Invoice {
 	 */
 	public function get_points_redeemed_count() {
 		if ( class_exists( '\HP_Core\Services\OrderPaymentDisplay' ) ) {
-			return \HP_Core\Services\OrderPaymentDisplay::get_points_redeemed( $this->order );
+			$points = \HP_Core\Services\OrderPaymentDisplay::get_points_redeemed( $this->order );
+			if ( $points > 0 ) {
+				return $points;
+			}
+			$pending = $this->get_eao_pending_points_intent();
+			return $pending['points'];
 		}
 
 		$split = $this->order->get_meta( '_hp_wallet_payment_split', true );
@@ -259,7 +264,13 @@ class Invoice {
 			return $points;
 		}
 
-		return (int) $this->order->get_meta( '_ywpar_coupon_points' );
+		$points = (int) $this->order->get_meta( '_ywpar_coupon_points' );
+		if ( $points > 0 ) {
+			return $points;
+		}
+
+		$pending = $this->get_eao_pending_points_intent();
+		return $pending['points'];
 	}
 
 	/**
@@ -269,7 +280,12 @@ class Invoice {
 	 */
 	public function get_points_discount_amount() {
 		if ( class_exists( '\HP_Core\Services\OrderPaymentDisplay' ) ) {
-			return \HP_Core\Services\OrderPaymentDisplay::get_points_discount( $this->order );
+			$amount = \HP_Core\Services\OrderPaymentDisplay::get_points_discount( $this->order );
+			if ( $amount > 0 ) {
+				return $amount;
+			}
+			$pending = $this->get_eao_pending_points_intent();
+			return $pending['amount'];
 		}
 
 		$split = $this->order->get_meta( '_hp_wallet_payment_split', true );
@@ -292,7 +308,8 @@ class Invoice {
 			}
 		}
 
-		return 0.0;
+		$pending = $this->get_eao_pending_points_intent();
+		return $pending['amount'];
 	}
 
 	/**
@@ -601,6 +618,65 @@ class Invoice {
 				(string) $fee->get_meta( '_hp_wallet_fee_type' ) === 'points'
 				|| strpos( strtolower( (string) $fee->get_name() ), 'points' ) !== false
 			);
+	}
+
+	/**
+	 * Use EAO's saved pending points selection for draft/unpaid admin orders.
+	 *
+	 * This keeps invoice exports aligned with the EAO summary before wallet/coupon
+	 * metadata has been written to the order.
+	 *
+	 * @return array{points:int,amount:float}
+	 */
+	private function get_eao_pending_points_intent() {
+		if ( ! $this->should_use_eao_pending_points_intent() ) {
+			return array(
+				'points' => 0,
+				'amount' => 0.0,
+			);
+		}
+
+		$snapshot = $this->order->get_meta( '_eao_current_points_discount', true );
+		if ( is_array( $snapshot ) ) {
+			$points = isset( $snapshot['points'] ) ? max( 0, (int) $snapshot['points'] ) : 0;
+			$amount = isset( $snapshot['amount'] ) ? round( max( 0, (float) $snapshot['amount'] ), wc_get_price_decimals() ) : 0.0;
+
+			if ( $points > 0 || $amount > 0 ) {
+				if ( $points <= 0 && $amount > 0 ) {
+					$points = (int) round( $amount * 10 );
+				}
+				if ( $amount <= 0 && $points > 0 ) {
+					$amount = round( $points / 10, wc_get_price_decimals() );
+				}
+
+				return array(
+					'points' => $points,
+					'amount' => $amount,
+				);
+			}
+		}
+
+		$pending_points = max( 0, (int) $this->order->get_meta( '_eao_pending_points_to_redeem', true ) );
+		if ( $pending_points > 0 ) {
+			return array(
+				'points' => $pending_points,
+				'amount' => round( $pending_points / 10, wc_get_price_decimals() ),
+			);
+		}
+
+		return array(
+			'points' => 0,
+			'amount' => 0.0,
+		);
+	}
+
+	/**
+	 * Pending EAO points are only authoritative before the order is finalized.
+	 *
+	 * @return bool
+	 */
+	private function should_use_eao_pending_points_intent() {
+		return ! in_array( $this->order->get_status(), array( 'processing', 'completed', 'shipped', 'delivered' ), true );
 	}
 }
 
