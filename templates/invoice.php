@@ -139,6 +139,21 @@ $prefix = get_option( 'hp_pdfi_invoice_prefix', '' );
 		.discount-line {
 			font-weight: bold;
 		}
+		.totals-section th,
+		.totals-section td {
+			padding-top: 12px;
+			border-bottom: none;
+		}
+		.totals-section th {
+			text-align: left;
+			font-size: 11pt;
+			text-transform: uppercase;
+			letter-spacing: 0.04em;
+		}
+		.totals-emphasis th,
+		.totals-emphasis td {
+			font-size: 11pt;
+		}
 		.strikethrough {
 			text-decoration: line-through;
 			color: #999;
@@ -270,10 +285,16 @@ $prefix = get_option( 'hp_pdfi_invoice_prefix', '' );
 
 <table class="totals-table">
 	<?php foreach ( $invoice->get_totals() as $total ) : ?>
-		<tr class="<?php echo isset( $total['class'] ) ? esc_attr( $total['class'] ) : ''; ?>">
+		<?php if ( ! empty( $total['is_section'] ) ) : ?>
+		<tr class="totals-section">
+			<th colspan="2"><?php echo esc_html( $total['label'] ); ?></th>
+		</tr>
+		<?php else : ?>
+		<tr class="<?php echo esc_attr( trim( ( isset( $total['class'] ) ? $total['class'] : '' ) . ' ' . ( ! empty( $total['bold'] ) ? 'totals-emphasis' : '' ) ) ); ?>">
 			<th><?php echo $total['label']; ?></th>
 			<td><?php echo $total['value']; ?></td>
 		</tr>
+		<?php endif; ?>
 	<?php endforeach; ?>
 </table>
 
@@ -288,4 +309,3 @@ $prefix = get_option( 'hp_pdfi_invoice_prefix', '' );
 
 </body>
 </html>
-
