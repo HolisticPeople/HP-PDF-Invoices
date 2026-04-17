@@ -313,9 +313,97 @@ class Invoice {
 	}
 
 	/**
-	 * Get discount breakdown for the order
-	 * Fetches Product Discounts from EAO meta and Points Discounts from YITH meta
-	 * No complex calculations - just read stored values
+	 * Get the EAO "items total (gross)" amount.
+	 *
+	 * @return float
+	 */
+	public function get_items_total_gross_amount() {
+		$items_total = 0.0;
+
+		foreach ( $this->order->get_items() as $item ) {
+			$items_total += (float) $item->get_subtotal();
+		}
+
+		return round( $items_total, wc_get_price_decimals() );
+	}
+
+	/**
+	 * Get the EAO total product discount amount.
+	 *
+	 * This reflects item/global product discounts from EAO and excludes wallet
+	 * payments so the invoice matches the order-editor summary.
+	 *
+	 * @return float
+	 */
+	public function get_total_product_discount_amount() {
+		if ( function_exists( 'eao_calculate_total_item_level_discounts' ) ) {
+			return round( max( 0, (float) eao_calculate_total_item_level_discounts( $this->order ) ), wc_get_price_decimals() );
+		}
+
+		$global_discount_percent = (float) $this->order->get_meta( '_eao_global_product_discount_percent' );
+		$product_discount = 0.0;
+
+		foreach ( $this->order->get_items() as $item ) {
+			$original_total = (float) $item->get_subtotal();
+			$item_discount_percent = (float) $item->get_meta( '_eao_item_discount_percent' );
+			$exclude_global = $item->get_meta( '_eao_exclude_global_discount' ) === 'yes'
+				|| $item->get_meta( '_eao_exclude_from_global_discount' ) === 'yes';
+
+			if ( $item_discount_percent > 0 ) {
+				$discount_percent = $item_discount_percent;
+			} elseif ( ! $exclude_global && $global_discount_percent > 0 ) {
+				$discount_percent = $global_discount_percent;
+			} else {
+				$discount_percent = 0;
+			}
+
+			if ( $discount_percent > 0 ) {
+				$product_discount += $original_total * ( $discount_percent / 100 );
+			}
+		}
+
+		return round( max( 0, $product_discount ), wc_get_price_decimals() );
+	}
+
+	/**
+	 * Get additional non-wallet admin discounts stored as fee lines.
+	 *
+	 * @return float
+	 */
+	public function get_admin_discount_amount() {
+		if ( function_exists( 'eao_points_get_non_wallet_discount_fee_total' ) ) {
+			return round( max( 0, (float) eao_points_get_non_wallet_discount_fee_total( $this->order ) ), wc_get_price_decimals() );
+		}
+
+		$discount_total = 0.0;
+		foreach ( $this->order->get_fees() as $fee ) {
+			$fee_total = (float) $fee->get_total() + (float) $fee->get_total_tax();
+			if ( $fee_total < 0 && ! $this->is_store_credit_fee( $fee ) && ! $this->is_points_fee( $fee ) ) {
+				$discount_total += abs( $fee_total );
+			}
+		}
+
+		return round( max( 0, $discount_total ), wc_get_price_decimals() );
+	}
+
+	/**
+	 * Get the EAO "products total (net)" amount.
+	 *
+	 * @return float
+	 */
+	public function get_products_total_net_amount() {
+		if ( function_exists( 'eao_calculate_products_total' ) ) {
+			return round( max( 0, (float) eao_calculate_products_total( $this->order ) ), wc_get_price_decimals() );
+		}
+
+		return round(
+			max( 0, $this->get_items_total_gross_amount() - $this->get_total_product_discount_amount() ),
+			wc_get_price_decimals()
+		);
+	}
+
+	/**
+	 * Get discount breakdown for the order.
 	 *
 	 * @return array
 	 */
@@ -323,44 +411,8 @@ class Invoice {
 		$summary = array();
 		$currency = $this->order->get_currency();
 
-		// 1. Get Product Discount from EAO stored discount percentages
-		// EAO stores: _eao_item_discount_percent per item, _eao_global_product_discount_percent on order
-		$global_discount_percent = (float) $this->order->get_meta( '_eao_global_product_discount_percent' );
-		$product_discount = 0;
-		
-		foreach ( $this->order->get_items() as $item ) {
-			$original_total = (float) $item->get_subtotal();
-			
-			// Get item-specific discount percent from EAO meta
-			$item_discount_percent = (float) $item->get_meta( '_eao_item_discount_percent' );
-			$exclude_global = $item->get_meta( '_eao_exclude_global_discount' ) === 'yes';
-			
-			// Determine which discount to apply
-			if ( $item_discount_percent > 0 ) {
-				// Item has its own discount percent
-				$discount_percent = $item_discount_percent;
-			} elseif ( ! $exclude_global && $global_discount_percent > 0 ) {
-				// Use global discount
-				$discount_percent = $global_discount_percent;
-			} else {
-				$discount_percent = 0;
-			}
-			
-			if ( $discount_percent > 0 ) {
-				$discount_amount = $original_total * ( $discount_percent / 100 );
-				$product_discount += $discount_amount;
-			}
-		}
-		
-		// Also add negative discount fees, but never wallet-payment fees.
-		foreach ( $this->order->get_fees() as $fee ) {
-			$fee_total = (float) $fee->get_total();
-			if ( $fee_total < 0 && ! $this->is_store_credit_fee( $fee ) && ! $this->is_points_fee( $fee ) ) {
-				$product_discount += abs( $fee_total );
-			}
-		}
-		
-		// 2. Get Points Discount from stored order metadata (HP-Wallet first, YITH legacy fallback).
+		$product_discount = $this->get_total_product_discount_amount();
+		$admin_discount = $this->get_admin_discount_amount();
 		$points_count = $this->get_points_redeemed_count();
 		$points_amount = $this->get_points_discount_amount();
 		
@@ -379,18 +431,25 @@ class Invoice {
 			}
 		}
 
-		// 3. Build the summary array
 		if ( $product_discount > 0.01 ) {
 			$summary[] = array(
-				'label' => __( 'Product Discount:', 'hp-pdf-invoices' ),
+				'label' => __( 'Total Product Discount:', 'hp-pdf-invoices' ),
 				'value' => '-' . \wc_price( $product_discount, array( 'currency' => $currency ) ),
 				'raw'   => $product_discount,
 			);
 		}
 
+		if ( $admin_discount > 0.01 ) {
+			$summary[] = array(
+				'label' => __( 'Admin Discount:', 'hp-pdf-invoices' ),
+				'value' => '-' . \wc_price( $admin_discount, array( 'currency' => $currency ) ),
+				'raw'   => $admin_discount,
+			);
+		}
+
 		if ( $points_amount > 0.01 ) {
 			$points_label = $points_count > 0 
-				? sprintf( __( 'Points Discount (%d pts):', 'hp-pdf-invoices' ), $points_count ) 
+				? sprintf( __( 'Points Discount (%d points):', 'hp-pdf-invoices' ), $points_count ) 
 				: __( 'Points Discount:', 'hp-pdf-invoices' );
 			$summary[] = array(
 				'label' => $points_label,
@@ -402,72 +461,133 @@ class Invoice {
 		return $summary;
 	}
 
+	/**
+	 * Build the EAO-style totals rows used across invoice formats.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_eao_totals_rows() {
+		$rows = array();
+
+		$items_gross = $this->get_items_total_gross_amount();
+		$product_discount = $this->get_total_product_discount_amount();
+		$admin_discount = $this->get_admin_discount_amount();
+		$products_total_net = $this->get_products_total_net_amount();
+		$points_discount = $this->get_points_discount_amount();
+		$points_count = $this->get_points_redeemed_count();
+		$store_credit = $this->get_store_credit_applied();
+		$shipping_total = round( (float) $this->order->get_shipping_total(), wc_get_price_decimals() );
+		$tax_total = round( (float) $this->order->get_total_tax(), wc_get_price_decimals() );
+		$grand_total = round( (float) $this->order->get_total(), wc_get_price_decimals() );
+
+		$rows[] = array(
+			'key'       => 'items_total_gross',
+			'label'     => __( 'Items Total (Gross):', 'hp-pdf-invoices' ),
+			'raw_value' => $items_gross,
+		);
+
+		if ( $product_discount > 0.01 ) {
+			$rows[] = array(
+				'key'       => 'total_product_discount',
+				'label'     => __( 'Total Product Discount:', 'hp-pdf-invoices' ),
+				'raw_value' => -1 * $product_discount,
+				'class'     => 'discount-line',
+			);
+		}
+
+		if ( $admin_discount > 0.01 ) {
+			$rows[] = array(
+				'key'       => 'admin_discount',
+				'label'     => __( 'Admin Discount:', 'hp-pdf-invoices' ),
+				'raw_value' => -1 * $admin_discount,
+				'class'     => 'discount-line',
+			);
+		}
+
+		$rows[] = array(
+			'key'       => 'products_total_net',
+			'label'     => __( 'Products Total (Net):', 'hp-pdf-invoices' ),
+			'raw_value' => $products_total_net,
+		);
+
+		if ( $points_discount > 0.01 ) {
+			$rows[] = array(
+				'key'       => 'points_discount',
+				'label'     => $points_count > 0
+					? sprintf( __( 'Points Discount (%d points):', 'hp-pdf-invoices' ), $points_count )
+					: __( 'Points Discount:', 'hp-pdf-invoices' ),
+				'raw_value' => -1 * $points_discount,
+				'class'     => 'discount-line',
+			);
+		}
+
+		if ( $store_credit > 0.01 ) {
+			$rows[] = array(
+				'key'       => 'store_credit_applied',
+				'label'     => __( 'Store Credit Applied:', 'hp-pdf-invoices' ),
+				'raw_value' => -1 * $store_credit,
+				'class'     => 'discount-line',
+			);
+		}
+
+		$rows[] = array(
+			'key'       => 'shipping',
+			'label'     => __( 'Shipping:', 'hp-pdf-invoices' ),
+			'raw_value' => $shipping_total,
+		);
+
+		if ( $tax_total > 0.01 ) {
+			$rows[] = array(
+				'key'       => 'tax',
+				'label'     => __( 'Tax:', 'hp-pdf-invoices' ),
+				'raw_value' => $tax_total,
+			);
+		}
+
+		$known_grand_total = $products_total_net - $admin_discount - $points_discount - $store_credit + $shipping_total + $tax_total;
+		$known_grand_total = round( $known_grand_total, wc_get_price_decimals() );
+		$adjustment = round( $grand_total - $known_grand_total, wc_get_price_decimals() );
+
+		if ( abs( $adjustment ) > 0.01 ) {
+			$rows[] = array(
+				'key'       => 'additional_adjustment',
+				'label'     => $adjustment < 0
+					? __( 'Additional Discount:', 'hp-pdf-invoices' )
+					: __( 'Additional Charge:', 'hp-pdf-invoices' ),
+				'raw_value' => $adjustment,
+				'class'     => $adjustment < 0 ? 'discount-line' : '',
+			);
+		}
+
+		$rows[] = array(
+			'key'       => 'total',
+			'label'     => __( 'Grand Total:', 'hp-pdf-invoices' ),
+			'raw_value' => $grand_total,
+			'bold'      => true,
+		);
+
+		return $rows;
+	}
+
 	public function get_totals() {
 		$totals = array();
 		$currency = $this->order->get_currency();
-		
-		// 1. Subtotal (Original prices before any discounts)
-		// Calculate from item subtotals for accuracy
-		$items_subtotal = 0;
-		foreach ( $this->order->get_items() as $item ) {
-			$items_subtotal += (float) $item->get_subtotal();
-		}
-		
-		$totals['subtotal'] = array(
-			'label' => __( 'Subtotal', 'hp-pdf-invoices' ),
-			'value' => \wc_price( $items_subtotal, array( 'currency' => $currency ) ),
-		);
 
-		// 2. Discounts - Always show if present
-		// Track total discounts for grand total calculation
-		$discounts = $this->get_discount_summary();
-		$total_discount = 0;
-		foreach ( $discounts as $index => $discount ) {
-			$totals['discount_' . $index] = array(
-				'label' => $discount['label'],
-				'value' => $discount['value'],
-				'class' => 'discount-line',
+		foreach ( $this->get_eao_totals_rows() as $row ) {
+			$raw_value = (float) $row['raw_value'];
+			$formatted_value = \wc_price( abs( $raw_value ), array( 'currency' => $currency ) );
+			if ( $raw_value < 0 ) {
+				$formatted_value = '-' . $formatted_value;
+			}
+
+			$totals[ $row['key'] ] = array(
+				'label' => $row['label'],
+				'value' => $formatted_value,
 			);
-			$total_discount += $discount['raw'];
-		}
 
-		// 3. Shipping
-		$shipping_total = (float) $this->order->get_shipping_total();
-		if ( $shipping_total > 0 ) {
-			// Clean shipping display to remove {{CARRIER}} template markers
-			$shipping_display = $this->order->get_shipping_to_display();
-			$shipping_display = $this->clean_shipping_method( $shipping_display );
-			
-			$totals['shipping'] = array(
-				'label' => __( 'Shipping', 'hp-pdf-invoices' ),
-				'value' => $shipping_display,
-			);
-		}
-
-		// 4. Taxes
-		$tax_total = 0;
-		foreach ( $this->order->get_tax_totals() as $code => $tax ) {
-			$totals[ 'tax_' . $code ] = array(
-				'label' => $tax->label,
-				'value' => $tax->formatted_amount,
-			);
-			$tax_total += (float) $tax->amount;
-		}
-
-		// 5. Total paid = subtotal - discounts + shipping + tax.
-		$grand_total = $items_subtotal - $total_discount + $shipping_total + $tax_total;
-		
-		$totals['total'] = array(
-			'label' => __( 'Total Paid', 'hp-pdf-invoices' ),
-			'value' => \wc_price( $grand_total, array( 'currency' => $currency ) ),
-		);
-
-		$store_credit = $this->get_store_credit_applied();
-		if ( $store_credit > 0 ) {
-			$totals['store_credit_payment'] = array(
-				'label' => __( 'Paid with Store Credit', 'hp-pdf-invoices' ),
-				'value' => \wc_price( $store_credit, array( 'currency' => $currency ) ),
-			);
+			if ( ! empty( $row['class'] ) ) {
+				$totals[ $row['key'] ]['class'] = $row['class'];
+			}
 		}
 
 		return $totals;
@@ -521,63 +641,12 @@ class Invoice {
 	 */
 	public function get_raw_totals() {
 		$totals = array();
-		
-		// Subtotal
-		$subtotal = 0;
-		foreach ( $this->order->get_items() as $item ) {
-			$subtotal += (float) $item->get_subtotal();
-		}
-		$totals[] = array(
-			'key'       => 'subtotal',
-			'label'     => __( 'Subtotal', 'hp-pdf-invoices' ),
-			'raw_value' => round( $subtotal, 2 ),
-		);
 
-		// Discounts - use the same classified breakdown as the HTML/DOCX views.
-		foreach ( $this->get_discount_summary() as $index => $discount ) {
+		foreach ( $this->get_eao_totals_rows() as $row ) {
 			$totals[] = array(
-				'key'       => 'discount_' . $index,
-				'label'     => rtrim( $discount['label'], ':' ),
-				'raw_value' => round( -1 * (float) $discount['raw'], 2 ),
-			);
-		}
-
-		// Shipping
-		$shipping = (float) $this->order->get_shipping_total();
-		if ( $shipping > 0 ) {
-			$totals[] = array(
-				'key'       => 'shipping',
-				'label'     => __( 'Shipping', 'hp-pdf-invoices' ),
-				'raw_value' => round( $shipping, 2 ),
-			);
-		}
-
-		// Taxes
-		foreach ( $this->order->get_tax_totals() as $code => $tax ) {
-			$totals[] = array(
-				'key'       => 'tax_' . $code,
-				'label'     => $tax->label,
-				'raw_value' => round( (float) $tax->amount, 2 ),
-			);
-		}
-
-		// Total paid = order total + store credit applied.
-		$total_paid = 0.0;
-		foreach ( $totals as $row ) {
-			$total_paid += (float) $row['raw_value'];
-		}
-		$totals[] = array(
-			'key'       => 'total',
-			'label'     => __( 'Total Paid', 'hp-pdf-invoices' ),
-			'raw_value' => round( $total_paid, 2 ),
-		);
-
-		$store_credit = $this->get_store_credit_applied();
-		if ( $store_credit > 0 ) {
-			$totals[] = array(
-				'key'       => 'store_credit_payment',
-				'label'     => __( 'Paid with Store Credit', 'hp-pdf-invoices' ),
-				'raw_value' => round( $store_credit, 2 ),
+				'key'       => $row['key'],
+				'label'     => rtrim( $row['label'], ':' ),
+				'raw_value' => round( (float) $row['raw_value'], 2 ),
 			);
 		}
 

@@ -469,57 +469,20 @@ class DOCXMaker {
 			'alignment'   => Jc::END,
 		) );
 
-		// Build totals from order data with full discount breakdown like EAO
+		// Reuse the shared invoice totals so DOCX matches PDF/XLSX and EAO.
 		$rows = array();
-		
-		// Calculate subtotal from original item prices
-		$subtotal = 0;
-		foreach ( $order->get_items() as $item ) {
-			$subtotal += (float) $item->get_subtotal(); // Original prices
-		}
-		
-		$rows[] = array( 'label' => __( 'Subtotal', 'hp-pdf-invoices' ), 'value' => $this->formatMoney( $subtotal, $currency ) );
-		
-		// Get discount breakdown from Invoice class and track total discounts
-		$discounts = $this->invoice->get_discount_summary();
-		$total_discount = 0;
-		foreach ( $discounts as $discount ) {
-			$rows[] = array( 
-				'label' => rtrim( $discount['label'], ':' ), 
-				'value' => '-' . $this->formatMoney( $discount['raw'], $currency ), 
-				'italic' => true 
-			);
-			$total_discount += $discount['raw'];
-		}
-		
-		// Shipping - include method name, cleaned of {{}} markers
-		$shipping = (float) $order->get_shipping_total();
-		if ( $shipping > 0 ) {
-			$shipping_method = $order->get_shipping_method();
-			// Clean {{CARRIER}} template markers from shipping method name
-			$shipping_method = trim( preg_replace( '/\{\{[^}]+\}\}\s*/', '', $shipping_method ) );
-			$shipping_label = __( 'Shipping', 'hp-pdf-invoices' );
-			if ( ! empty( $shipping_method ) ) {
-				$shipping_label .= ' (' . $shipping_method . ')';
+		foreach ( $this->invoice->get_raw_totals() as $total ) {
+			$raw_value = (float) $total['raw_value'];
+			$value = $this->formatMoney( abs( $raw_value ), $currency );
+			if ( $raw_value < 0 ) {
+				$value = '-' . $value;
 			}
-			$rows[] = array( 'label' => $shipping_label, 'value' => $this->formatMoney( $shipping, $currency ) );
-		}
-		
-		// Tax
-		$tax = (float) $order->get_total_tax();
-		if ( $tax > 0 ) {
-			$rows[] = array( 'label' => __( 'Tax', 'hp-pdf-invoices' ), 'value' => $this->formatMoney( $tax, $currency ) );
-		}
-		
-		// Total paid = subtotal - discounts + shipping + tax.
-		$grand_total = $subtotal - $total_discount + $shipping + $tax;
-		$rows[] = array( 'label' => __( 'Total Paid', 'hp-pdf-invoices' ), 'value' => $this->formatMoney( $grand_total, $currency ), 'bold' => true );
 
-		$store_credit = $this->invoice->get_store_credit_applied();
-		if ( $store_credit > 0 ) {
 			$rows[] = array(
-				'label' => __( 'Paid with Store Credit', 'hp-pdf-invoices' ),
-				'value' => $this->formatMoney( $store_credit, $currency ),
+				'label'  => $total['label'],
+				'value'  => $value,
+				'italic' => $raw_value < 0 && $total['key'] !== 'total',
+				'bold'   => $total['key'] === 'total',
 			);
 		}
 
