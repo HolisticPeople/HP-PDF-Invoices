@@ -13,7 +13,7 @@ interface AtRule extends Renderable, Commentable
      *
      * @var string
      *
-     * @internal since 8.5.2
+     * @internal
      */
     const BLOCK_RULES = 'media/document/supports/region-style/font-feature-values';
 
@@ -22,7 +22,7 @@ interface AtRule extends Renderable, Commentable
      *
      * @var string
      *
-     * @internal since 8.5.2
+     * @internal
      */
     const SET_RULES = 'font-face/counter-style/page/swash/styleset/annotation';
 

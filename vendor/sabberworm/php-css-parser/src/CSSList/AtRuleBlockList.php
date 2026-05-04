@@ -50,8 +50,6 @@ class AtRuleBlockList extends CSSBlockList implements AtRule
 
     /**
      * @return string
-     *
-     * @deprecated in V8.8.0, will be removed in V9.0.0. Use `render` instead.
      */
     public function __toString()
     {
@@ -59,11 +57,9 @@ class AtRuleBlockList extends CSSBlockList implements AtRule
     }
 
     /**
-     * @param OutputFormat|null $oOutputFormat
-     *
      * @return string
      */
-    public function render($oOutputFormat)
+    public function render(OutputFormat $oOutputFormat)
     {
         $sResult = $oOutputFormat->comments($this);
         $sResult .= $oOutputFormat->sBeforeAtRuleBlock;

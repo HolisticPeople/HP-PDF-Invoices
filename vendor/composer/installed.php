@@ -7,7 +7,7 @@
         'type' => 'library',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
-        'dev' => true,
+        'dev' => false,
     ),
     'versions' => array(
         'composer/pcre' => array(
@@ -38,9 +38,9 @@
             'dev_requirement' => false,
         ),
         'maennchen/zipstream-php' => array(
-            'pretty_version' => '3.2.1',
-            'version' => '3.2.1.0',
-            'reference' => '682f1098a8fddbaf43edac2306a691c7ad508ec5',
+            'pretty_version' => '3.2.2',
+            'version' => '3.2.2.0',
+            'reference' => '77bebeb4c6c340bb3c11c843b2cffd8bbfde4d5e',
             'type' => 'library',
             'install_path' => __DIR__ . '/../maennchen/zipstream-php',
             'aliases' => array(),
@@ -101,9 +101,9 @@
             'dev_requirement' => false,
         ),
         'phpoffice/phpspreadsheet' => array(
-            'pretty_version' => '2.4.3',
-            'version' => '2.4.3.0',
-            'reference' => '3b204d00c19f9d809f8d2374f408b197f37ad0bd',
+            'pretty_version' => '2.4.5',
+            'version' => '2.4.5.0',
+            'reference' => 'ec7815be350e03df90f3e2ace92653fa6cb4327c',
             'type' => 'library',
             'install_path' => __DIR__ . '/../phpoffice/phpspreadsheet',
             'aliases' => array(),
@@ -128,9 +128,9 @@
             'dev_requirement' => false,
         ),
         'sabberworm/php-css-parser' => array(
-            'pretty_version' => 'v8.9.0',
-            'version' => '8.9.0.0',
-            'reference' => 'd8e916507b88e389e26d4ab03c904a082aa66bb9',
+            'pretty_version' => 'v8.6.0',
+            'version' => '8.6.0.0',
+            'reference' => 'd2fb94a9641be84d79c7548c6d39bbebba6e9a70',
             'type' => 'library',
             'install_path' => __DIR__ . '/../sabberworm/php-css-parser',
             'aliases' => array(),

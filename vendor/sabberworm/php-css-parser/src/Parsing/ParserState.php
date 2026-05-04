@@ -5,15 +5,12 @@ namespace Sabberworm\CSS\Parsing;
 use Sabberworm\CSS\Comment\Comment;
 use Sabberworm\CSS\Settings;
 
-/**
- * @internal since 8.7.0
- */
 class ParserState
 {
     /**
      * @var null
      *
-     * @internal since 8.5.2
+     * @internal
      */
     const EOF = null;
 
@@ -141,8 +138,6 @@ class ParserState
      * @return string
      *
      * @throws UnexpectedTokenException
-     *
-     * @internal since V8.8.0
      */
     public function parseIdentifier($bIgnoreCase = true)
     {
@@ -174,8 +169,6 @@ class ParserState
      *
      * @throws UnexpectedEOFException
      * @throws UnexpectedTokenException
-     *
-     * @internal since V8.8.0
      */
     public function parseCharacter($bIsForIdentifier)
     {

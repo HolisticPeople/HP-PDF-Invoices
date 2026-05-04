@@ -20,21 +20,10 @@ class Size extends PrimitiveValue
      * @internal
      */
     const ABSOLUTE_SIZE_UNITS = [
-        'px',
-        'pt',
-        'pc',
-        'cm',
-        'mm',
-        'mozmm',
-        'in',
-        'vh',
-        'dvh',
-        'svh',
-        'lvh',
-        'vw',
-        'vmin',
-        'vmax',
-        'rem',
+        'px', 'pt', 'pc',
+        'cm', 'mm', 'mozmm', 'in',
+        'vh', 'dvh', 'svh', 'lvh',
+        'vw', 'vmin', 'vmax', 'rem',
     ];
 
     /**
@@ -92,8 +81,6 @@ class Size extends PrimitiveValue
      *
      * @throws UnexpectedEOFException
      * @throws UnexpectedTokenException
-     *
-     * @internal since V8.8.0
      */
     public static function parse(ParserState $oParserState, $bIsColorComponent = false)
     {
@@ -222,8 +209,6 @@ class Size extends PrimitiveValue
 
     /**
      * @return string
-     *
-     * @deprecated in V8.8.0, will be removed in V9.0.0. Use `render` instead.
      */
     public function __toString()
     {
@@ -231,16 +216,14 @@ class Size extends PrimitiveValue
     }
 
     /**
-     * @param OutputFormat|null $oOutputFormat
-     *
      * @return string
      */
-    public function render($oOutputFormat)
+    public function render(OutputFormat $oOutputFormat)
     {
         $l = localeconv();
         $sPoint = preg_quote($l['decimal_point'], '/');
         $sSize = preg_match("/[\d\.]+e[+-]?\d+/i", (string)$this->fSize)
-            ? preg_replace("/$sPoint?0+$/", "", sprintf("%f", $this->fSize)) : (string)$this->fSize;
+            ? preg_replace("/$sPoint?0+$/", "", sprintf("%f", $this->fSize)) : $this->fSize;
         return preg_replace(["/$sPoint/", "/^(-?)0\./"], ['.', '$1.'], $sSize)
             . ($this->sUnit === null ? '' : $this->sUnit);
     }

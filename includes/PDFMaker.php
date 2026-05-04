@@ -1,9 +1,6 @@
 <?php
 namespace HP_PDFI;
 
-use WPO\IPS\Vendor\Dompdf\Dompdf;
-use WPO\IPS\Vendor\Dompdf\Options;
-
 if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly
 }
@@ -35,7 +32,10 @@ class PDFMaker {
 			wp_mkdir_p( $tmp_path );
 		}
 
-		$options = new Options( array(
+		$dompdf_class  = class_exists( '\\WPO\\IPS\\Vendor\\Dompdf\\Dompdf' ) ? '\\WPO\\IPS\\Vendor\\Dompdf\\Dompdf' : '\\Dompdf\\Dompdf';
+		$options_class = class_exists( '\\WPO\\IPS\\Vendor\\Dompdf\\Options' ) ? '\\WPO\\IPS\\Vendor\\Dompdf\\Options' : '\\Dompdf\\Options';
+
+		$options = new $options_class( array(
 			'tempDir'              => $tmp_path,
 			'fontDir'              => $tmp_path . '/fonts',
 			'fontCache'            => $tmp_path . '/fonts',
@@ -49,7 +49,7 @@ class PDFMaker {
 			wp_mkdir_p( $tmp_path . '/fonts' );
 		}
 
-		$dompdf = new Dompdf( $options );
+		$dompdf = new $dompdf_class( $options );
 		$dompdf->loadHtml( $this->html );
 		$dompdf->setPaper( $this->settings['paper_size'], $this->settings['paper_orientation'] );
 		$dompdf->render();
@@ -59,4 +59,3 @@ class PDFMaker {
 }
 
 endif;
-
