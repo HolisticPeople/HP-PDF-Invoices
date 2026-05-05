@@ -2,6 +2,7 @@
     "name": "hp/pdf-invoices",
     "description": "Minimal tailored PDF invoices for Holistic People",
     "require": {
+        "php": ">=8.5",
         "dompdf/dompdf": "^2.0",
         "phpoffice/phpword": "^1.2",
         "phpoffice/phpspreadsheet": "^2.0",

@@ -2,17 +2,27 @@
 /**
  * Plugin Name: HP Invoices
  * Description: Tailored invoices for Holistic People. Supports PDF, Word (DOCX), and Excel (XLSX) export formats.
- * Version:     1.2.30
+ * Version:     2.0.0
  * Author:      Holistic People
  * Text Domain: hp-pdf-invoices
+ * Requires PHP: 8.5
  * WC requires at least: 3.3
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly
 }
+if ( PHP_VERSION_ID < 80500 ) {
+	add_action(
+		'admin_notices',
+		static function (): void {
+			echo '<div class="notice notice-error"><p>' . esc_html( sprintf( 'HP Invoices requires PHP 8.5 or higher. Current PHP version: %s.', PHP_VERSION ) ) . '</p></div>';
+		}
+	);
+	return;
+}
 
-define( 'HP_PDFI_VERSION', '1.2.30' );
+define( 'HP_PDFI_VERSION', '2.0.0' );
 define( 'HP_PDFI_PATH', plugin_dir_path( __FILE__ ) );
 define( 'HP_PDFI_URL', plugin_dir_url( __FILE__ ) );
 
