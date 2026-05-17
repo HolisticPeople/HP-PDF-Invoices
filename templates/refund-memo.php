@@ -44,6 +44,9 @@ if ( ! $shop_address ) {
 		}
 	}
 }
+$shop_address_lines = preg_split( '/\R+/', (string) $shop_address );
+$shop_address_lines = array_filter( array_map( 'trim', $shop_address_lines ) );
+$shop_address_compact = implode( ', ', $shop_address_lines );
 
 $groups       = $memo->get_refund_groups();
 $summary      = $memo->get_summary();
@@ -77,14 +80,30 @@ $payment_name = $order->get_payment_method_title() ?: $order->get_payment_method
 			padding: 0;
 			vertical-align: top;
 		}
+		.logo-cell {
+			width: 25%;
+		}
 		.logo {
-			max-height: 44px;
-			max-width: 145px;
+			max-height: 72px;
+			max-width: 210px;
 		}
 		.shop-info {
+			width: 75%;
 			text-align: right;
-			line-height: 1.25;
+			line-height: 1.3;
 			color: #4a5565;
+			font-size: 9.5pt;
+		}
+		.shop-name {
+			display: block;
+			font-size: 11pt;
+			font-weight: bold;
+			color: #334155;
+			white-space: nowrap;
+		}
+		.shop-address {
+			display: block;
+			white-space: nowrap;
 		}
 		.document-type-label {
 			font-size: 22pt;
@@ -102,7 +121,10 @@ $payment_name = $order->get_payment_method_title() ?: $order->get_payment_method
 			color: #1e3a8a;
 		}
 		.addresses td {
-			width: 33%;
+			width: 30%;
+		}
+		.addresses .memo-meta-cell {
+			width: 40%;
 		}
 		.addresses h3,
 		.refund-group h3,
@@ -111,13 +133,20 @@ $payment_name = $order->get_payment_method_title() ?: $order->get_payment_method
 			margin: 0 0 6px;
 			color: #111827;
 		}
-		.meta-table th {
-			width: 42%;
-			color: #4a5565;
-			font-weight: normal;
+		.memo-meta {
+			font-size: 9.5pt;
+			line-height: 1.55;
+		}
+		.memo-meta-row {
 			white-space: nowrap;
 		}
-		.meta-table td {
+		.memo-meta-label {
+			display: inline-block;
+			width: 82px;
+			color: #4a5565;
+			font-weight: normal;
+		}
+		.memo-meta-value {
 			font-weight: bold;
 		}
 		.refund-group {
@@ -195,7 +224,7 @@ $payment_name = $order->get_payment_method_title() ?: $order->get_payment_method
 
 <table class="header-table">
 	<tr>
-		<td>
+		<td class="logo-cell">
 			<?php if ( $logo_url ) : ?>
 				<img src="<?php echo esc_url( $logo_url ); ?>" class="logo">
 			<?php else : ?>
@@ -203,8 +232,8 @@ $payment_name = $order->get_payment_method_title() ?: $order->get_payment_method
 			<?php endif; ?>
 		</td>
 		<td class="shop-info">
-			<strong><?php echo esc_html( $shop_name ); ?></strong><br>
-			<?php echo nl2br( esc_html( $shop_address ) ); ?>
+			<span class="shop-name"><?php echo esc_html( $shop_name ); ?></span>
+			<span class="shop-address"><?php echo esc_html( $shop_address_compact ); ?></span>
 		</td>
 	</tr>
 </table>
@@ -227,29 +256,16 @@ $payment_name = $order->get_payment_method_title() ?: $order->get_payment_method
 			<h3><?php esc_html_e( 'Ship To', 'hp-pdf-invoices' ); ?></h3>
 			<?php echo wp_kses_post( $order->get_formatted_shipping_address() ); ?>
 		</td>
-		<td>
-			<table class="meta-table">
-				<tr>
-					<th><?php esc_html_e( 'Memo Number:', 'hp-pdf-invoices' ); ?></th>
-					<td><?php echo esc_html( $memo->get_memo_number() ); ?></td>
-				</tr>
-				<tr>
-					<th><?php esc_html_e( 'Memo Date:', 'hp-pdf-invoices' ); ?></th>
-					<td><?php echo esc_html( date_i18n( get_option( 'date_format' ) ) ); ?></td>
-				</tr>
-				<tr>
-					<th><?php esc_html_e( 'Order Number:', 'hp-pdf-invoices' ); ?></th>
-					<td><?php echo esc_html( $order->get_order_number() ); ?></td>
-				</tr>
-				<tr>
-					<th><?php esc_html_e( 'Order Date:', 'hp-pdf-invoices' ); ?></th>
-					<td><?php echo esc_html( $order_date ); ?></td>
-				</tr>
-				<tr>
-					<th><?php esc_html_e( 'Original Payment:', 'hp-pdf-invoices' ); ?></th>
-					<td><?php echo esc_html( $payment_name ); ?></td>
-				</tr>
-			</table>
+		<td class="memo-meta-cell">
+			<div class="memo-meta">
+				<div class="memo-meta-row"><span class="memo-meta-label"><?php esc_html_e( 'Memo #:', 'hp-pdf-invoices' ); ?></span><span class="memo-meta-value"><?php echo esc_html( $memo->get_memo_number() ); ?></span></div>
+				<div class="memo-meta-row"><span class="memo-meta-label"><?php esc_html_e( 'Memo Date:', 'hp-pdf-invoices' ); ?></span><span class="memo-meta-value"><?php echo esc_html( date_i18n( get_option( 'date_format' ) ) ); ?></span></div>
+				<div class="memo-meta-row"><span class="memo-meta-label"><?php esc_html_e( 'Order #:', 'hp-pdf-invoices' ); ?></span><span class="memo-meta-value"><?php echo esc_html( $order->get_order_number() ); ?></span></div>
+				<div class="memo-meta-row"><span class="memo-meta-label"><?php esc_html_e( 'Order Date:', 'hp-pdf-invoices' ); ?></span><span class="memo-meta-value"><?php echo esc_html( $order_date ); ?></span></div>
+				<?php if ( $payment_name ) : ?>
+					<div class="memo-meta-row"><span class="memo-meta-label"><?php esc_html_e( 'Payment:', 'hp-pdf-invoices' ); ?></span><span class="memo-meta-value"><?php echo esc_html( $payment_name ); ?></span></div>
+				<?php endif; ?>
+			</div>
 		</td>
 	</tr>
 </table>
@@ -347,7 +363,7 @@ $payment_name = $order->get_payment_method_title() ?: $order->get_payment_method
 </table>
 
 <div class="footer-note">
-	<?php esc_html_e( 'Amounts are shown in the order currency and include tax where the refunded WooCommerce line includes tax. Keep this memo with the original order record for customer service and accounting reference.', 'hp-pdf-invoices' ); ?>
+	<?php esc_html_e( 'Amounts are shown in the order currency. Keep this memo with the original order record for customer service and accounting reference.', 'hp-pdf-invoices' ); ?>
 </div>
 
 </body>
