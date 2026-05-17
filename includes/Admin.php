@@ -74,6 +74,8 @@ class Admin {
 		$pdf_url  = wp_nonce_url( $base_url . '&format=pdf', 'generate_invoice' );
 		$docx_url = wp_nonce_url( $base_url . '&format=docx', 'generate_invoice' );
 		$xlsx_url = wp_nonce_url( $base_url . '&format=xlsx', 'generate_invoice' );
+		$refund_memo_url = wp_nonce_url( $base_url . '&document=refund_memo&format=pdf', 'generate_invoice' );
+		$has_refunds = count( $order->get_refunds() ) > 0;
 
 		wp_nonce_field( 'hp_pdfi_meta_box', 'hp_pdfi_meta_box_nonce' );
 		?>
@@ -111,6 +113,17 @@ class Admin {
 					<span class="dashicons dashicons-media-spreadsheet" style="margin-top: 3px;"></span> Excel
 				</a>
 			</p>
+			<?php if ( $has_refunds ) : ?>
+				<hr>
+				<p style="margin-bottom: 8px;">
+					<strong><?php _e( 'Refund Documents:', 'hp-pdf-invoices' ); ?></strong>
+				</p>
+				<p class="hp-pdfi-export-buttons" style="display: flex; gap: 5px; flex-wrap: wrap;">
+					<a href="<?php echo esc_url( $refund_memo_url ); ?>" id="hp-pdfi-refund-memo-btn" class="button" target="_blank" title="<?php esc_attr_e( 'Download refund memo PDF', 'hp-pdf-invoices' ); ?>">
+						<span class="dashicons dashicons-media-document" style="margin-top: 3px;"></span> Refund Memo PDF
+					</a>
+				</p>
+			<?php endif; ?>
 		</div>
 		<script>
 		(function($) {
@@ -217,6 +230,13 @@ class Admin {
 			'name'   => __( 'PDF Invoice', 'hp-pdf-invoices' ),
 			'action' => 'hp-pdfi-invoice',
 		);
+		if ( count( $order->get_refunds() ) > 0 ) {
+			$actions['hp_pdfi_refund_memo'] = array(
+				'url'    => wp_nonce_url( admin_url( 'admin.php?hp_pdfi_action=generate&document=refund_memo&format=pdf&order_id=' . $order->get_id() ), 'generate_invoice' ),
+				'name'   => __( 'Refund Memo', 'hp-pdf-invoices' ),
+				'action' => 'hp-pdfi-invoice',
+			);
+		}
 		return $actions;
 	}
 
@@ -247,6 +267,14 @@ class Admin {
 
 		if ( ! $can_edit && ! $is_owner ) {
 			wp_die( __( 'You do not have permission to view this invoice.', 'hp-pdf-invoices' ) );
+		}
+
+		$document = isset( $_GET['document'] ) ? sanitize_key( $_GET['document'] ) : 'invoice';
+		if ( 'refund_memo' === $document ) {
+			$refund_id = isset( $_GET['refund_id'] ) ? absint( $_GET['refund_id'] ) : 0;
+			$memo = new RefundMemo( $order, $refund_id );
+			$memo->output_pdf();
+			exit;
 		}
 
 		// Determine format (default to PDF)
@@ -285,4 +313,3 @@ class Admin {
 }
 
 endif;
-
