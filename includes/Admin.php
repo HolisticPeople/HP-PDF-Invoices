@@ -21,6 +21,7 @@ class Admin {
 		add_action( 'woocommerce_process_shop_order_meta', array( $this, 'save_meta_box_data' ) );
 		add_action( 'admin_menu', array( $this, 'add_settings_page' ) );
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
+		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_surface' ) );
 		
 		// Add order action for the invoice
 		add_filter( 'woocommerce_admin_order_actions', array( $this, 'add_order_listing_actions' ), 10, 2 );
@@ -28,6 +29,14 @@ class Admin {
 		// Handle the document generation request (PDF, DOCX, XLSX)
 		add_action( 'admin_init', array( $this, 'handle_document_request' ) );
 		add_action( 'admin_post_hp_pdfi_generate', array( $this, 'handle_document_request' ) );
+	}
+
+	public function enqueue_admin_surface( $hook ): void {
+		if ( 'tools_page_hp-pdf-invoices' !== $hook ) {
+			return;
+		}
+
+		do_action( 'hp_zen_enqueue_admin_surface', 'hp-pdf-invoices' );
 	}
 
 	public function add_meta_boxes() {
