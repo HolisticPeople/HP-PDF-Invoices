@@ -19,8 +19,6 @@ class Assets {
 			return;
 		}
 
-		do_action( 'hp_zen_enqueue_admin_surface', 'hp-pdf-invoices' );
-
 		wp_register_style( 'hp-pdfi-admin', HP_PDFI_URL . 'assets/css/admin.css', array(), HP_PDFI_VERSION );
 		wp_enqueue_style( 'hp-pdfi-admin' );
 	}
