@@ -25,18 +25,25 @@ class Frontend {
 		}
 
 		$order_id = $order->get_id();
-		$url = wp_nonce_url( 
-			add_query_arg( 
-				array( 
-					'hp_pdfi_action'          => 'generate', 
+		// Route through admin-post.php, NOT admin.php: WooCommerce's
+		// prevent_admin_access redirects customer-role users out of wp-admin
+		// (to an empty My Account) before our admin_init handler can run, so the
+		// admin.php URL silently fails for customers. admin-post.php is exempt
+		// from that redirect and fires our admin_post_hp_pdfi_generate handler,
+		// whose own permission check already allows the order owner.
+		$url = wp_nonce_url(
+			add_query_arg(
+				array(
+					'action'                  => 'hp_pdfi_generate', // fires admin_post_hp_pdfi_generate
+					'hp_pdfi_action'          => 'generate',
 					'order_id'                => $order_id,
 					'hp_pdfi_show_paid_price' => 'no', // Full discount details for customers
 					'hp_pdfi_show_images'     => 'yes', // Images for customers
 					'from'                    => 'my-account'
-				), 
-				admin_url( 'admin.php' ) 
-			), 
-			'generate_invoice' 
+				),
+				admin_url( 'admin-post.php' )
+			),
+			'generate_invoice'
 		);
 
 		$actions['hp_pdfi_invoice'] = array(

@@ -27,8 +27,27 @@ if (strpos($admin, "do_action( 'hp_zen_enqueue_admin_surface', 'hp-pdf-invoices'
     exit(1);
 }
 
-if (strpos($plugin, 'Version:     3.0.4') === false || strpos($plugin, "define( 'HP_PDFI_VERSION', '3.0.4' );") === false) {
-    fwrite(STDERR, 'HP Invoices release metadata should be 3.0.4.' . PHP_EOL);
+if (strpos($plugin, 'Version:     3.0.5') === false || strpos($plugin, "define( 'HP_PDFI_VERSION', '3.0.5' );") === false) {
+    fwrite(STDERR, 'HP Invoices release metadata should be 3.0.5.' . PHP_EOL);
+    exit(1);
+}
+
+// Customer-facing invoice button must route through admin-post.php, not admin.php.
+// WooCommerce's prevent_admin_access redirects customer-role users out of wp-admin
+// before our admin_init handler runs, so an admin.php URL silently fails for them.
+$frontend = file_get_contents($root . '/includes/Frontend.php');
+if (!is_string($frontend)) {
+    fwrite(STDERR, 'Could not read HP Invoices Frontend.php.' . PHP_EOL);
+    exit(1);
+}
+
+if (strpos($frontend, "admin_url( 'admin-post.php' )") === false || strpos($frontend, "'action'                  => 'hp_pdfi_generate'") === false) {
+    fwrite(STDERR, 'My Account invoice button must route through admin-post.php with action=hp_pdfi_generate so customers are not redirected by WooCommerce.' . PHP_EOL);
+    exit(1);
+}
+
+if (strpos($frontend, "admin_url( 'admin.php' )") !== false) {
+    fwrite(STDERR, 'My Account invoice button must not use admin.php (customers get redirected out of wp-admin).' . PHP_EOL);
     exit(1);
 }
 
