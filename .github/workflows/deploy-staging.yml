@@ -51,6 +51,11 @@ jobs:
             -e "ssh -p ${KINSTA_PORT:-22}" \
             ./ "${KINSTA_USER}@${KINSTA_HOST}:${DEPLOY_PATH}/"
 
+      - name: Purge Kinsta page cache
+        run: |
+          ssh -p "${KINSTA_PORT:-22}" "${KINSTA_USER}@${KINSTA_HOST}" \
+            "cd ~/public && wp kinsta cache purge --all"
+
       - name: Flush cache on staging
         run: |
           ssh -p "${KINSTA_PORT:-22}" "${KINSTA_USER}@${KINSTA_HOST}" "cd $(dirname $(dirname ${DEPLOY_PATH})) && wp cache flush"
