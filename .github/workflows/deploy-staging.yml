@@ -48,6 +48,7 @@ jobs:
             --exclude='.git*' \
             --exclude='.github*' \
             --exclude='.cursor*' \
+            --exclude='tests' \
             -e "ssh -p ${KINSTA_PORT:-22}" \
             ./ "${KINSTA_USER}@${KINSTA_HOST}:${DEPLOY_PATH}/"
 

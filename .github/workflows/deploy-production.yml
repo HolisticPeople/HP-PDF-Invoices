@@ -43,6 +43,7 @@ jobs:
             --exclude='.git*' \
             --exclude='.cursor*' \
             --exclude='.github*' \
+            --exclude='tests' \
             -e "ssh -p ${KINSTAPROD_PORT}" \
             ./ "${KINSTAPROD_USER}@${KINSTAPROD_HOST}:${DEPLOY_PATH}/"
 
