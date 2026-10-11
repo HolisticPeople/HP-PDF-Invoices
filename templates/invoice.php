@@ -115,8 +115,8 @@ $prefix = get_option( 'hp_pdfi_invoice_prefix', '' );
 			text-align: center;
 		}
 		.totals-table {
-			width: 60%;
-			float: right;
+			width: 100%;
+			page-break-inside: avoid;
 		}
 		.totals-table th {
 			text-align: right;
