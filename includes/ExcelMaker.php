@@ -190,9 +190,9 @@ class ExcelMaker {
 
 		foreach ( $totals as $total ) {
 			$sheet->setCellValue( 'F' . $row, $total['label'] );
-			$sheet->setCellValue( 'G' . $row, $total['raw_value'] );
+			$sheet->setCellValue( 'G' . $row, $total['text_value'] ?? $total['raw_value'] );
 			$sheet->getStyle( 'F' . $row )->getFont()->setBold( true );
-			$sheet->getStyle( 'G' . $row )->getNumberFormat()->setFormatCode( '"$"#,##0.00' );
+			if ( ! isset( $total['text_value'] ) ) { $sheet->getStyle( 'G' . $row )->getNumberFormat()->setFormatCode( '"$"#,##0.00' ); }
 			
 			if ( $total['key'] === 'total' ) {
 				$sheet->getStyle( 'F' . $row . ':G' . $row )->getFont()->setBold( true )->setSize( 12 );
@@ -327,9 +327,9 @@ class ExcelMaker {
 		$totals = $this->invoice->get_raw_totals();
 		foreach ( $totals as $total ) {
 			$sheet->setCellValue( 'A' . $row, $total['label'] );
-			$sheet->setCellValue( 'B' . $row, $total['raw_value'] );
+			$sheet->setCellValue( 'B' . $row, $total['text_value'] ?? $total['raw_value'] );
 			$sheet->getStyle( 'A' . $row )->applyFromArray( $headerStyle );
-			$sheet->getStyle( 'B' . $row )->getNumberFormat()->setFormatCode( '"$"#,##0.00' );
+			if ( ! isset( $total['text_value'] ) ) { $sheet->getStyle( 'B' . $row )->getNumberFormat()->setFormatCode( '"$"#,##0.00' ); }
 			$row++;
 		}
 

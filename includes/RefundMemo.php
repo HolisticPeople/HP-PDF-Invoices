@@ -111,8 +111,8 @@ class RefundMemo {
 			$groups[] = array(
 				'id'                => $refund->get_id(),
 				'date'              => $this->format_date( $refund->get_date_created() ),
-				'reason'            => (string) $refund->get_reason(),
-				'gateway'           => $this->get_refund_meta( $refund, '_eao_refunded_via_gateway' ),
+				'reason'            => $this->get_customer_refund_reason( (string) $refund->get_reason(), (string) $this->get_refund_meta( $refund, '_eao_refund_reference' ) ),
+				'gateway'           => $this->get_customer_gateway_label( (string) $this->get_refund_meta( $refund, '_eao_refunded_via_gateway' ) ),
 				'gateway_reference' => $this->get_refund_meta( $refund, '_eao_refund_reference' ),
 				'cash_amount'       => abs( (float) $refund->get_amount() ),
 				'store_credit'      => $this->get_store_credit_refunded( $refund ),
@@ -123,6 +123,41 @@ class RefundMemo {
 		}
 
 		return $groups;
+	}
+
+	/** Display an actual reason without the recognized EAO bookkeeping envelope. */
+	protected function get_customer_refund_reason( $reason, $reference = '' ) {
+		if ( ! preg_match( '/^Refund via Enhanced Admin Order - HolisticPeople\.com - Order#\s*\d+(?:\s*\||$)/', $reason ) ) {
+			return $reason;
+		}
+
+		if ( preg_match( '/\| Reason: (.*)$/s', $reason, $matches ) ) {
+			$customer_reason = trim( $matches[1] );
+			// Strip only an exact generated suffix backed by the saved reference.
+			// Reserved-looking words inside a customer's reason are not metadata.
+			if ( $reference !== '' ) {
+				foreach ( array( 'Stripe refunds ' . $reference . ' (Live)', 'Stripe refunds ' . $reference . ' (Test)', 'PayPal refund ' . $reference, 'Gateway reference ' . $reference ) as $suffix ) {
+					$suffix = ' | ' . $suffix;
+					if ( str_ends_with( $customer_reason, $suffix ) ) {
+						return trim( substr( $customer_reason, 0, -strlen( $suffix ) ) );
+					}
+				}
+			}
+			return $customer_reason;
+		}
+
+		return '';
+	}
+
+	/** Consume Core's public read-only label contract; tolerate an older owner. */
+	protected function get_customer_gateway_label( $gateway ) {
+		$callback = array( '\\HP_Core\\Services\\OrderPaymentDisplay', 'get_payment_method_label' );
+		if ( is_callable( $callback ) ) {
+			$label = call_user_func( $callback, $gateway, $gateway );
+			return $label !== $gateway ? $label : call_user_func( $callback, '', $gateway );
+		}
+
+		return $gateway;
 	}
 
 	/**
