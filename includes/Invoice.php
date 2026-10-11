@@ -24,6 +24,8 @@ class Invoice {
 	public $show_paid_price;
 	public $printer_friendly;
 	public $show_images;
+	private $collection_snapshot_loaded = false;
+	private $collection_snapshot = null;
 
 	public function __construct( $order ) {
 		$this->order = $order;
@@ -250,8 +252,7 @@ class Invoice {
 			if ( $points > 0 ) {
 				return $points;
 			}
-			$pending = $this->get_eao_pending_points_intent();
-			return $pending['points'];
+			return 0;
 		}
 
 		$split = $this->order->get_meta( '_hp_wallet_payment_split', true );
@@ -269,8 +270,7 @@ class Invoice {
 			return $points;
 		}
 
-		$pending = $this->get_eao_pending_points_intent();
-		return $pending['points'];
+		return 0;
 	}
 
 	/**
@@ -284,8 +284,7 @@ class Invoice {
 			if ( $amount > 0 ) {
 				return $amount;
 			}
-			$pending = $this->get_eao_pending_points_intent();
-			return $pending['amount'];
+			return 0.0;
 		}
 
 		$split = $this->order->get_meta( '_hp_wallet_payment_split', true );
@@ -308,8 +307,7 @@ class Invoice {
 			}
 		}
 
-		$pending = $this->get_eao_pending_points_intent();
-		return $pending['amount'];
+		return 0.0;
 	}
 
 	/**
@@ -497,6 +495,10 @@ class Invoice {
 	 * @return float
 	 */
 	public function get_other_payments_received_amount() {
+		$snapshot = $this->get_collection_snapshot();
+		if ( $snapshot !== null ) {
+			return $snapshot['cash_settled'] / pow( 10, $snapshot['minor_unit'] );
+		}
 		$paid_total = 0.0;
 		if ( method_exists( $this->order, 'get_total_paid' ) ) {
 			$paid_total = (float) $this->order->get_total_paid();
@@ -511,12 +513,54 @@ class Invoice {
 	 * @return float
 	 */
 	public function get_balance_due_amount() {
+		$snapshot = $this->get_collection_snapshot();
+		if ( $snapshot !== null ) {
+			return $snapshot['outstanding'] / pow( 10, $snapshot['minor_unit'] );
+		}
 		$due = $this->get_order_total_amount();
 		$due -= $this->get_points_discount_amount();
 		$due -= $this->get_store_credit_applied();
 		$due -= $this->get_other_payments_received_amount();
 
 		return round( max( 0, $due ), wc_get_price_decimals() );
+	}
+
+	/** Optional, read-only Core Collection V2; never infer payment from status. */
+	private function get_collection_snapshot() {
+		if ( $this->collection_snapshot_loaded ) { return $this->collection_snapshot; }
+		$this->collection_snapshot_loaded = true;
+		if ( ! function_exists( 'hp_core_order_collection_snapshot_v1' ) ) { return null; }
+		try {
+			$snapshot = hp_core_order_collection_snapshot_v1( $this->order );
+		} catch ( \Throwable $error ) {
+			error_log( wp_json_encode( array( 'event' => 'hp_pdfi.collection.read_failed', 'order_id' => $this->order->get_id(), 'error_class' => get_class( $error ) ) ) );
+			return null;
+		}
+		if ( ! is_array( $snapshot ) || ( $snapshot['contract_version'] ?? '' ) !== '2.0'
+			|| ( $snapshot['available'] ?? false ) !== true
+			|| ( $snapshot['order_id'] ?? 0 ) !== (int) $this->order->get_id()
+			|| ! is_string( $snapshot['currency'] ?? null ) || strtolower( $snapshot['currency'] ) !== strtolower( $this->order->get_currency() )
+			|| ! in_array( $snapshot['balance_state'] ?? '', array( 'unpaid', 'partially_paid', 'paid', 'overpaid', 'not_required' ), true )
+			|| ( $snapshot['exception_codes'] ?? null ) !== array()
+			|| ! is_int( $snapshot['minor_unit'] ?? null ) || $snapshot['minor_unit'] < 0 || $snapshot['minor_unit'] > 4
+			|| ! is_int( $snapshot['cash_settled'] ?? null ) || $snapshot['cash_settled'] < 0
+			|| ! is_int( $snapshot['outstanding'] ?? null ) || $snapshot['outstanding'] < 0 ) {
+			return null;
+		}
+		$this->collection_snapshot = $snapshot;
+		return $snapshot;
+	}
+
+	/** Saved selections are a payment plan, not a Wallet settlement. */
+	public function get_pending_wallet_selection() {
+		$pending = $this->get_eao_pending_points_intent();
+		if ( $this->get_points_discount_amount() > 0 ) { $pending = array( 'points' => 0, 'amount' => 0.0, 'verified' => true ); }
+		$credit = $this->should_use_eao_pending_points_intent() && $this->get_store_credit_applied() <= 0
+			? $this->order->get_meta( '_eao_pending_store_credit_to_apply', true ) : 0;
+		$credit_valid = $credit === '' || $this->is_valid_selection_number( $credit );
+		$pending['store_credit'] = $credit_valid ? round( (float) $credit, wc_get_price_decimals() ) : 0.0;
+		$pending['credit_verified'] = $credit_valid;
+		return $pending;
 	}
 
 	/**
@@ -537,6 +581,10 @@ class Invoice {
 		$tax_total = round( (float) $this->order->get_total_tax(), wc_get_price_decimals() );
 		$order_total = $this->get_order_total_amount();
 		$balance_due = $this->get_balance_due_amount();
+		$pending = $this->get_pending_wallet_selection();
+		$selection_unverified = ! $pending['verified'] || ( $pending['points'] > 0 && $pending['amount'] <= 0 );
+		$has_pending = $selection_unverified || ! $pending['credit_verified'] || $pending['points'] > 0 || $pending['amount'] > 0 || $pending['store_credit'] > 0;
+		$collection_unverified = $selection_unverified || ! $pending['credit_verified'] || $this->get_collection_snapshot() === null;
 
 		$rows[] = array(
 			'type'  => 'section',
@@ -645,18 +693,34 @@ class Invoice {
 		$rows[] = array(
 			'type'      => 'line',
 			'key'       => 'balance_due',
-			'label'     => __( 'Balance Due:', 'hp-pdf-invoices' ),
+			'label'     => $has_pending ? __( 'Balance before Wallet selections:', 'hp-pdf-invoices' ) : __( 'Balance Due:', 'hp-pdf-invoices' ),
 			'raw_value' => $balance_due,
 			'bold'      => true,
 		);
+		if ( $collection_unverified ) {
+			$rows[ count( $rows ) - 1 ]['text_value'] = __( 'Requires payment review', 'hp-pdf-invoices' );
+		}
+		if ( $has_pending ) {
+			$rows[] = array( 'type' => 'section', 'key' => 'wallet_selected', 'label' => __( 'Wallet selections - not yet applied', 'hp-pdf-invoices' ) );
+			if ( $selection_unverified || $pending['points'] > 0 || $pending['amount'] > 0 ) {
+				$rows[] = array( 'type' => 'line', 'key' => 'points_selected', 'label' => $pending['points'] > 0 ? sprintf( __( 'Selected points (%d points):', 'hp-pdf-invoices' ), $pending['points'] ) : __( 'Selected points:', 'hp-pdf-invoices' ), 'raw_value' => -$pending['amount'] );
+				if ( $selection_unverified ) { $rows[ count( $rows ) - 1 ]['text_value'] = __( 'Value requires review', 'hp-pdf-invoices' ); }
+			}
+			if ( ! $pending['credit_verified'] || $pending['store_credit'] > 0 ) {
+				$rows[] = array( 'type' => 'line', 'key' => 'credit_selected', 'label' => __( 'Selected store credit:', 'hp-pdf-invoices' ), 'raw_value' => -$pending['store_credit'] );
+				if ( ! $pending['credit_verified'] ) { $rows[ count( $rows ) - 1 ]['text_value'] = __( 'Value requires review', 'hp-pdf-invoices' ); }
+			}
+			$rows[] = array( 'type' => 'line', 'key' => 'cash_after_selections', 'label' => __( 'Cash due after Wallet application:', 'hp-pdf-invoices' ), 'raw_value' => round( max( 0, $balance_due - $pending['amount'] - $pending['store_credit'] ), wc_get_price_decimals() ), 'bold' => true );
+			if ( $collection_unverified ) { $rows[ count( $rows ) - 1 ]['text_value'] = __( 'Requires payment review', 'hp-pdf-invoices' ); }
+		}
 
 		$rows[] = array(
 			'type'       => 'line',
 			'key'        => 'payment_status',
 			'label'      => __( 'Status:', 'hp-pdf-invoices' ),
-			'text_value' => $balance_due > 0.01
+			'text_value' => $collection_unverified ? __( 'Requires payment review', 'hp-pdf-invoices' ) : ( $has_pending ? __( 'Wallet selections pending', 'hp-pdf-invoices' ) : ( $balance_due > 0
 				? sprintf( __( 'Due %s', 'hp-pdf-invoices' ), \wc_price( $balance_due, array( 'currency' => $this->order->get_currency() ) ) )
-				: __( 'Paid in Full', 'hp-pdf-invoices' ),
+				: __( 'Paid in Full', 'hp-pdf-invoices' ) ) ),
 			'bold'       => true,
 		);
 
@@ -759,6 +823,7 @@ class Invoice {
 			}
 
 			if ( isset( $row['text_value'] ) ) {
+				$totals[] = array( 'key' => $row['key'], 'label' => rtrim( $row['label'], ':' ), 'text_value' => wp_strip_all_tags( $row['text_value'] ) );
 				continue;
 			}
 
@@ -814,48 +879,58 @@ class Invoice {
 	 * This keeps invoice exports aligned with the EAO summary before wallet/coupon
 	 * metadata has been written to the order.
 	 *
-	 * @return array{points:int,amount:float}
+	 * @return array{points:int,amount:float,verified:bool}
 	 */
 	private function get_eao_pending_points_intent() {
 		if ( ! $this->should_use_eao_pending_points_intent() ) {
 			return array(
 				'points' => 0,
 				'amount' => 0.0,
+				'verified' => true,
 			);
 		}
 
 		$snapshot = $this->order->get_meta( '_eao_current_points_discount', true );
 		if ( is_array( $snapshot ) ) {
-			$points = isset( $snapshot['points'] ) ? max( 0, (int) $snapshot['points'] ) : 0;
-			$amount = isset( $snapshot['amount'] ) ? round( max( 0, (float) $snapshot['amount'] ), wc_get_price_decimals() ) : 0.0;
+			$raw_points = $snapshot['points'] ?? 0;
+			$raw_amount = $snapshot['amount'] ?? 0;
+			$points_valid = $this->is_valid_selection_number( $raw_points, true );
+			$amount_valid = $this->is_valid_selection_number( $raw_amount );
+			$points = $points_valid ? (int) $raw_points : 0;
+			$amount = $amount_valid ? round( (float) $raw_amount, wc_get_price_decimals() ) : 0.0;
+			if ( ! $points_valid || ! $amount_valid ) { return array( 'points' => $points, 'amount' => $amount, 'verified' => false ); }
 
 			if ( $points > 0 || $amount > 0 ) {
-				if ( $points <= 0 && $amount > 0 ) {
-					$points = (int) round( $amount * 10 );
-				}
-				if ( $amount <= 0 && $points > 0 ) {
-					$amount = round( $points / 10, wc_get_price_decimals() );
-				}
-
 				return array(
 					'points' => $points,
 					'amount' => $amount,
+					'verified' => true,
 				);
 			}
 		}
+		elseif ( $snapshot !== '' && $snapshot !== null ) { return array( 'points' => 0, 'amount' => 0.0, 'verified' => false ); }
 
-		$pending_points = max( 0, (int) $this->order->get_meta( '_eao_pending_points_to_redeem', true ) );
+		$raw_pending_points = $this->order->get_meta( '_eao_pending_points_to_redeem', true );
+		if ( $raw_pending_points !== '' && ! $this->is_valid_selection_number( $raw_pending_points, true ) ) { return array( 'points' => 0, 'amount' => 0.0, 'verified' => false ); }
+		$pending_points = (int) $raw_pending_points;
 		if ( $pending_points > 0 ) {
 			return array(
 				'points' => $pending_points,
-				'amount' => round( $pending_points / 10, wc_get_price_decimals() ),
+				'amount' => 0.0, // A count alone does not establish its saved value.
+				'verified' => true,
 			);
 		}
 
 		return array(
 			'points' => 0,
 			'amount' => 0.0,
+			'verified' => true,
 		);
+	}
+
+	private function is_valid_selection_number( $value, $whole = false ) {
+		return is_numeric( $value ) && is_finite( (float) $value ) && (float) $value >= 0
+			&& ( ! $whole || ( (float) $value < PHP_INT_MAX && floor( (float) $value ) === (float) $value ) );
 	}
 
 	/**
@@ -864,7 +939,7 @@ class Invoice {
 	 * @return bool
 	 */
 	private function should_use_eao_pending_points_intent() {
-		return ! in_array( $this->order->get_status(), array( 'processing', 'completed', 'shipped', 'delivered' ), true );
+		return in_array( $this->order->get_status(), array( 'pending', 'on-hold', 'auto-draft', 'draft' ), true );
 	}
 }
 

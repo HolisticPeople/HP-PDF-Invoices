@@ -472,9 +472,9 @@ class DOCXMaker {
 		// Reuse the shared invoice totals so DOCX matches PDF/XLSX and EAO.
 		$rows = array();
 		foreach ( $this->invoice->get_raw_totals() as $total ) {
-			$raw_value = (float) $total['raw_value'];
-			$value = $this->formatMoney( abs( $raw_value ), $currency );
-			if ( $raw_value < 0 ) {
+			$raw_value = isset( $total['text_value'] ) ? 0.0 : (float) $total['raw_value'];
+			$value = isset( $total['text_value'] ) ? $total['text_value'] : $this->formatMoney( abs( $raw_value ), $currency );
+			if ( ! isset( $total['text_value'] ) && $raw_value < 0 ) {
 				$value = '-' . $value;
 			}
 
