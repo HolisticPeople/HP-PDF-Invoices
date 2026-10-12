@@ -23,7 +23,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Add SSH key
         uses: webfactory/ssh-agent@v0.10.0
@@ -48,8 +48,14 @@ jobs:
             --exclude='.git*' \
             --exclude='.github*' \
             --exclude='.cursor*' \
+            --exclude='tests' \
             -e "ssh -p ${KINSTA_PORT:-22}" \
             ./ "${KINSTA_USER}@${KINSTA_HOST}:${DEPLOY_PATH}/"
+
+      - name: Purge Kinsta page cache
+        run: |
+          ssh -p "${KINSTA_PORT:-22}" "${KINSTA_USER}@${KINSTA_HOST}" \
+            "cd ~/public && wp kinsta cache purge --all"
 
       - name: Flush cache on staging
         run: |

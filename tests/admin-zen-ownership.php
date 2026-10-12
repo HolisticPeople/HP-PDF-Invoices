@@ -27,8 +27,8 @@ if (strpos($admin, "do_action( 'hp_zen_enqueue_admin_surface', 'hp-pdf-invoices'
     exit(1);
 }
 
-if (strpos($plugin, 'Version:     3.0.5') === false || strpos($plugin, "define( 'HP_PDFI_VERSION', '3.0.5' );") === false) {
-    fwrite(STDERR, 'HP Invoices release metadata should be 3.0.5.' . PHP_EOL);
+if (strpos($plugin, 'Version:     3.0.6') === false || strpos($plugin, "define( 'HP_PDFI_VERSION', '3.0.6' );") === false) {
+    fwrite(STDERR, 'HP Invoices release metadata should be 3.0.6.' . PHP_EOL);
     exit(1);
 }
 
